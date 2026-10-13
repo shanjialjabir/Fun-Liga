@@ -2,6 +2,12 @@
 
 **Every Match Matters.** Web app mini soccer berbahasa Indonesia dengan tema Dark Sports, Next.js App Router, TypeScript, Tailwind CSS, Radix Dialog, Zod, dan React Hook Form.
 
+## Website online
+
+**https://fun-liga.vercel.app** — deployment produksi menggunakan Vercel dan Supabase.
+
+Lihat `docs/deployment.md` untuk hasil verifikasi dan konfigurasi. Login serta operasi kompetisi telah diuji pada server produksi. Pengiriman email verifikasi ke pendaftar umum masih memerlukan konfigurasi SMTP pada proyek Supabase; jangan menganggap pengiriman email sudah teruji.
+
 ## Coba demo tanpa instalasi
 
 File `demo-output/Fun-Mini-Soccer-Demo.html` dapat diunduh dan dibuka langsung di browser desktop (Chrome, Edge, atau Firefox). Tidak memerlukan Node, Supabase, internet, atau pengaturan port. Demo membuka akun lokal otomatis dan dimulai tanpa kompetisi contoh.
@@ -44,7 +50,7 @@ Demo menggunakan SQLite bawaan Node.js di `.data/demo.sqlite`. Data dan session 
 
 ## Supabase untuk deployment
 
-Demo lokal telah diuji. **Belum ada proyek Supabase yang dikonfigurasi untuk menjalankan verifikasi provider Auth/OAuth atau koneksi Realtime sungguhan.** Migrasi SQL/RLS/RPC telah diuji dengan PostgreSQL lokal melalui PGlite, yang tidak menggantikan pengujian integrasi Supabase.
+Demo lokal dan API produksi Supabase telah diuji. Proyek produksi sudah dikonfigurasi; lihat `docs/deployment.md`. Google OAuth, pengiriman email verifikasi, dan pembaruan realtime di browser produksi belum diverifikasi. Migrasi SQL/RLS/RPC juga diuji dengan PostgreSQL lokal melalui PGlite.
 
 1. Buat proyek Supabase. Jalankan `supabase/migrations/001_competitions.sql` di SQL Editor proyek baru. Alternatif: link proyek dengan Supabase CLI dan jalankan `supabase db push`.
 2. Set variabel berikut di `.env.local` (lokal) atau environment hosting (deployment). Jangan commit kunci.
