@@ -2,6 +2,7 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { X, ArrowUpRight, Shield, Loader2 } from "lucide-react";
 import type { Team } from "@/lib/competition";
+import { displayTeamColor } from "@/lib/palette";
 export function Modal({
   open,
   onClose,
@@ -65,14 +66,15 @@ export function Badge({ status }: { status: string }) {
   );
 }
 export function TeamMark({ team, size = 36 }: { team?: Team; size?: number }) {
+  const color = displayTeamColor(team?.color);
   return (
     <span
       className="team-mark"
       style={{
         width: size,
         height: size,
-        color: team?.color || "#8b9a96",
-        background: `${team?.color || "#8b9a96"}15`,
+        color,
+        background: `${color}20`,
       }}
     >
       <Shield size={size * 0.65} strokeWidth={1.5} />

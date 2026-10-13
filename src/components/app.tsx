@@ -41,6 +41,7 @@ import {
   X,
 } from "lucide-react";
 import { api, authClient, ApiError } from "@/lib/client";
+import { ACCENT_COLOR } from "@/lib/palette";
 import {
   competitionInput,
   formats,
@@ -2958,7 +2959,7 @@ function Teams({
                   {
                     id: `new-${crypto.randomUUID()}`,
                     name: "",
-                    color: "#BCE875",
+                    color: ACCENT_COLOR,
                     group: c.format.includes("group")
                       ? String.fromCharCode(
                           65 + (teams.length % c.rules.groups),

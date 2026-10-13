@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TEAM_COLORS } from "./palette";
 
 export const formats = {
   fourfeo: "Fourfeo",
@@ -139,14 +140,7 @@ export const competitionInput = z
         path: ["qualifiers"],
       });
   });
-const colors = [
-  "#BCE875",
-  "#78BCEC",
-  "#D4A5EC",
-  "#FFBD7B",
-  "#82D6BC",
-  "#F28EA7",
-];
+const colors = TEAM_COLORS;
 const id = () => crypto.randomUUID();
 function fixture(
   home: string | null,
