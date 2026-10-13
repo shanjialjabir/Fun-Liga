@@ -12,7 +12,7 @@ Untuk membuat ulang artifact setelah perubahan: jalankan `pnpm build`, kemudian 
 
 ## Jalankan demo lokal
 
-Prasyarat: Node.js **22.13+** (divalidasi dengan 24.19.0) dan pnpm **11.25+**.
+Prasyarat: Node.js **24.x** (divalidasi dengan 24.19.0) dan pnpm **11.25+**.
 
 ```sh
 pnpm install --frozen-lockfile
