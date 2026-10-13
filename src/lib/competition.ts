@@ -1,0 +1,929 @@
+import { z } from "zod";
+
+export const formats = {
+  fourfeo: "Fourfeo",
+  league: "Liga",
+  group_stage: "Fase grup",
+  knockout: "Gugur",
+  group_then_knockout: "Grup + gugur",
+} as const;
+export type Format = keyof typeof formats;
+export type Role = "owner" | "admin" | "score_operator";
+export type MatchStatus =
+  "scheduled" | "live" | "final" | "postponed" | "cancelled";
+export type Team = {
+  id: string;
+  name: string;
+  color: string;
+  group: string | null;
+};
+export type Match = {
+  id: string;
+  home: string | null;
+  away: string | null;
+  stage: "group" | "league" | "knockout";
+  group: string | null;
+  round: number;
+  meeting: number;
+  order: number;
+  status: MatchStatus;
+  homeScore: number;
+  awayScore: number;
+  homePenalty: number | null;
+  awayPenalty: number | null;
+  winner: string | null;
+  sourceHome?: string;
+  sourceAway?: string;
+  sourceOutcome?: "winner" | "loser";
+  scheduledAt: string | null;
+  version: number;
+};
+export type Audit = {
+  id: string;
+  actor: string;
+  event: string;
+  reason: string | null;
+  before: unknown;
+  after: unknown;
+  at: string;
+};
+export type Competition = {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  venue: string;
+  startDate: string;
+  format: Format;
+  visibility: "public" | "unlisted" | "private";
+  status:
+    | "draft"
+    | "published"
+    | "in_progress"
+    | "completed"
+    | "archived"
+    | "cancelled";
+  ownerId: string;
+  version: number;
+  createdAt: string;
+  teams: Team[];
+  matches: Match[];
+  rules: {
+    meetings: number;
+    win: number;
+    draw: number;
+    loss: number;
+    ranking: boolean;
+    groups: number;
+    qualifiers: number;
+    thirdPlace: boolean;
+  };
+  members: { userId: string; email: string; role: Role }[];
+  audit: Audit[];
+  tieOrder: string[];
+};
+export const competitionInput = z
+  .object({
+    name: z.string().trim().min(3, "Nama minimal 3 karakter").max(100),
+    description: z.string().trim().max(1000).default(""),
+    venue: z.string().trim().max(150).default(""),
+    startDate: z.string().default(""),
+    format: z.enum([
+      "fourfeo",
+      "league",
+      "group_stage",
+      "knockout",
+      "group_then_knockout",
+    ]),
+    visibility: z.enum(["public", "unlisted", "private"]).default("public"),
+    teamNames: z.array(z.string().trim().min(1).max(60)).min(2).max(32),
+    meetings: z.number().int().min(1).max(10).default(2),
+    win: z.number().int().min(0).max(20).default(3),
+    draw: z.number().int().min(0).max(20).default(1),
+    loss: z.number().int().min(0).max(20).default(0),
+    ranking: z.boolean().default(true),
+    groups: z.number().int().min(1).max(8).default(2),
+    qualifiers: z.number().int().min(1).max(8).default(2),
+    thirdPlace: z.boolean().default(false),
+  })
+  .superRefine((v, ctx) => {
+    if (
+      new Set(v.teamNames.map((n) => n.toLocaleLowerCase())).size !==
+      v.teamNames.length
+    )
+      ctx.addIssue({
+        code: "custom",
+        message: "Nama tim harus unik",
+        path: ["teamNames"],
+      });
+    if (v.format === "fourfeo" && v.teamNames.length !== 4)
+      ctx.addIssue({
+        code: "custom",
+        message: "Fourfeo membutuhkan tepat 4 tim",
+        path: ["teamNames"],
+      });
+    if (v.format.includes("group") && v.teamNames.length < v.groups * 2)
+      ctx.addIssue({
+        code: "custom",
+        message: "Setiap grup membutuhkan minimal 2 tim",
+        path: ["groups"],
+      });
+    if (
+      v.format === "group_then_knockout" &&
+      (v.qualifiers > Math.floor(v.teamNames.length / v.groups) ||
+        v.qualifiers * v.groups < 2)
+    )
+      ctx.addIssue({
+        code: "custom",
+        message: "Jumlah tim yang lolos tidak valid",
+        path: ["qualifiers"],
+      });
+  });
+const colors = [
+  "#BCE875",
+  "#78BCEC",
+  "#D4A5EC",
+  "#FFBD7B",
+  "#82D6BC",
+  "#F28EA7",
+];
+const id = () => crypto.randomUUID();
+function fixture(
+  home: string | null,
+  away: string | null,
+  stage: Match["stage"],
+  group: string | null,
+  round: number,
+  meeting: number,
+  order: number,
+): Match {
+  return {
+    id: id(),
+    home,
+    away,
+    stage,
+    group,
+    round,
+    meeting,
+    order,
+    status: "scheduled",
+    homeScore: 0,
+    awayScore: 0,
+    homePenalty: null,
+    awayPenalty: null,
+    winner: null,
+    scheduledAt: null,
+    version: 0,
+  };
+}
+export function roundRobin(
+  teams: Team[],
+  meetings: number,
+  stage: "group" | "league" = "league",
+  group: string | null = null,
+): Match[] {
+  const ring: (string | null)[] = teams.map((t) => t.id);
+  if (ring.length % 2) ring.push(null);
+  const base: Match[] = [];
+  for (let r = 0; r < ring.length - 1; r++) {
+    for (let i = 0; i < ring.length / 2; i++) {
+      const a = ring[i],
+        b = ring[ring.length - 1 - i];
+      if (a && b)
+        base.push(
+          fixture(
+            r % 2 ? b : a,
+            r % 2 ? a : b,
+            stage,
+            group,
+            r + 1,
+            1,
+            base.length,
+          ),
+        );
+    }
+    ring.splice(1, 0, ring.pop()!);
+  }
+  return Array.from({ length: meetings }, (_, meeting) =>
+    base.map((m) => ({
+      ...m,
+      id: id(),
+      home: meeting % 2 ? m.away : m.home,
+      away: meeting % 2 ? m.home : m.away,
+      meeting: meeting + 1,
+      round: m.round + meeting * (ring.length - 1),
+    })),
+  )
+    .flat()
+    .map((m, order) => ({ ...m, order }));
+}
+export function knockout(teams: Team[], thirdPlace = false): Match[] {
+  let size = 2;
+  while (size < teams.length) size *= 2;
+  let seeds = [1, 2];
+  while (seeds.length < size)
+    seeds = seeds.flatMap((s) => [s, seeds.length * 2 + 1 - s]);
+  type Slot = { team: string | null; source?: string };
+  let slots: Slot[] = seeds.map((s) => ({ team: teams[s - 1]?.id ?? null }));
+  const matches: Match[] = [];
+  let round = 1;
+  while (slots.length > 1) {
+    const next: Slot[] = [];
+    for (let i = 0; i < slots.length; i += 2) {
+      const a = slots[i],
+        b = slots[i + 1];
+      if (!a.team && !a.source) {
+        next.push(b);
+        continue;
+      }
+      if (!b.team && !b.source) {
+        next.push(a);
+        continue;
+      }
+      const m = fixture(
+        a.team,
+        b.team,
+        "knockout",
+        null,
+        round,
+        1,
+        matches.length,
+      );
+      m.sourceHome = a.source;
+      m.sourceAway = b.source;
+      matches.push(m);
+      next.push({ team: null, source: m.id });
+    }
+    slots = next;
+    round++;
+  }
+  if (thirdPlace) {
+    const semi = matches.filter((m) => m.round === round - 2);
+    if (semi.length === 2) {
+      const m = fixture(
+        null,
+        null,
+        "knockout",
+        null,
+        round - 1,
+        1,
+        matches.length,
+      );
+      m.sourceHome = semi[0].id;
+      m.sourceAway = semi[1].id;
+      m.sourceOutcome = "loser";
+      matches.push(m);
+    }
+  }
+  return matches;
+}
+export function createCompetition(
+  input: unknown,
+  user: { id: string; email: string },
+): Competition {
+  const v = competitionInput.parse(input);
+  const cid = id();
+  const grouped = v.format.includes("group");
+  const teams = v.teamNames.map((name, i) => ({
+    id: id(),
+    name,
+    color: colors[i % colors.length],
+    group: grouped ? String.fromCharCode(65 + (i % v.groups)) : null,
+  }));
+  let matches =
+    v.format === "knockout"
+      ? knockout(teams, v.thirdPlace)
+      : grouped
+        ? Array.from({ length: v.groups }, (_, i) =>
+            String.fromCharCode(65 + i),
+          ).flatMap((g) =>
+            roundRobin(
+              teams.filter((t) => t.group === g),
+              v.meetings,
+              "group",
+              g,
+            ),
+          )
+        : roundRobin(teams, v.meetings);
+  matches = matches.map((m, order) => ({ ...m, order }));
+  return {
+    id: cid,
+    slug: `${
+      v.name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "") || "kompetisi"
+    }-${cid.slice(0, 8)}`,
+    name: v.name,
+    description: v.description,
+    venue: v.venue,
+    startDate: v.startDate,
+    format: v.format,
+    visibility: v.visibility,
+    status: "draft",
+    ownerId: user.id,
+    version: 0,
+    createdAt: new Date().toISOString(),
+    teams,
+    matches,
+    rules: {
+      meetings: v.meetings,
+      win: v.win,
+      draw: v.draw,
+      loss: v.loss,
+      ranking: v.ranking,
+      groups: v.groups,
+      qualifiers: v.qualifiers,
+      thirdPlace: v.thirdPlace,
+    },
+    members: [{ userId: user.id, email: user.email, role: "owner" }],
+    audit: [],
+    tieOrder: [],
+  };
+}
+export function generateFixtures(
+  c: Pick<Competition, "format" | "teams" | "rules">,
+): Match[] {
+  const generated =
+    c.format === "knockout"
+      ? knockout(c.teams, c.rules.thirdPlace)
+      : c.format.includes("group")
+        ? Array.from({ length: c.rules.groups }, (_, i) =>
+            String.fromCharCode(65 + i),
+          ).flatMap((g) =>
+            roundRobin(
+              c.teams.filter((t) => t.group === g),
+              c.rules.meetings,
+              "group",
+              g,
+            ),
+          )
+        : roundRobin(c.teams, c.rules.meetings);
+  return generated.map((m, order) => ({ ...m, order }));
+}
+export function prioritizeRest(matches: Match[]): Match[] {
+  const remaining = [...matches],
+    out: Match[] = [];
+  while (remaining.length) {
+    const previous = out.at(-1);
+    if (!["scheduled", "postponed"].includes(remaining[0].status)) {
+      out.push(remaining.shift()!);
+      continue;
+    }
+    const anchor = remaining.findIndex(
+      (m) => !["scheduled", "postponed"].includes(m.status),
+    );
+    const stop = anchor === -1 ? remaining.length : anchor;
+    const index = remaining
+      .slice(0, stop)
+      .findIndex(
+        (m) =>
+          !previous ||
+          ![m.home, m.away].some(
+            (t) => t && (t === previous.home || t === previous.away),
+          ),
+      );
+    out.push(remaining.splice(index < 0 ? 0 : index, 1)[0]);
+  }
+  return out.map((m, order) => ({ ...m, order }));
+}
+export type Standing = {
+  team: Team;
+  played: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  gf: number;
+  ga: number;
+  gd: number;
+  points: number;
+  tied: boolean;
+  position: number;
+};
+export function standings(c: Competition, group?: string): Standing[] {
+  const teams = c.teams.filter((t) => !group || t.group === group);
+  const rows = teams.map((team) => ({
+    team,
+    played: 0,
+    wins: 0,
+    draws: 0,
+    losses: 0,
+    gf: 0,
+    ga: 0,
+    gd: 0,
+    points: 0,
+    tied: false,
+    position: 0,
+  }));
+  const finals = c.matches.filter(
+    (m) =>
+      m.status === "final" &&
+      m.stage !== "knockout" &&
+      (!group || m.group === group),
+  );
+  for (const m of finals) {
+    for (const row of rows) {
+      if (row.team.id !== m.home && row.team.id !== m.away) continue;
+      const home = row.team.id === m.home;
+      const gf = home ? m.homeScore : m.awayScore,
+        ga = home ? m.awayScore : m.homeScore;
+      row.played++;
+      row.gf += gf;
+      row.ga += ga;
+      if (gf > ga) {
+        row.wins++;
+        row.points += c.rules.win;
+      } else if (gf === ga) {
+        row.draws++;
+        row.points += c.rules.draw;
+      } else {
+        row.losses++;
+        row.points += c.rules.loss;
+      }
+      row.gd = row.gf - row.ga;
+    }
+  }
+  const base = (a: Standing, b: Standing) =>
+    b.points - a.points || b.gd - a.gd || b.gf - a.gf;
+  rows.sort(base);
+  let start = 0;
+  while (start < rows.length) {
+    let end = start + 1;
+    while (end < rows.length && base(rows[start], rows[end]) === 0) end++;
+    const set = rows.slice(start, end);
+    const ids = new Set(set.map((r) => r.team.id));
+    const mini = new Map(set.map((r) => [r.team.id, { p: 0, gd: 0, gf: 0 }]));
+    for (const m of finals.filter(
+      (m) => ids.has(m.home!) && ids.has(m.away!),
+    )) {
+      for (const [tid, gf, ga] of [
+        [m.home, m.homeScore, m.awayScore],
+        [m.away, m.awayScore, m.homeScore],
+      ] as [string, number, number][]) {
+        const r = mini.get(tid)!;
+        r.p += gf > ga ? c.rules.win : gf === ga ? c.rules.draw : c.rules.loss;
+        r.gd += gf - ga;
+        r.gf += gf;
+      }
+    }
+    const head = (a: Standing, b: Standing) => {
+      const x = mini.get(a.team.id)!,
+        y = mini.get(b.team.id)!;
+      return y.p - x.p || y.gd - x.gd || y.gf - x.gf;
+    };
+    const manual = (a: Standing, b: Standing) =>
+      c.tieOrder.includes(a.team.id) && c.tieOrder.includes(b.team.id)
+        ? c.tieOrder.indexOf(a.team.id) - c.tieOrder.indexOf(b.team.id)
+        : 0;
+    set.sort(
+      (a, b) =>
+        head(a, b) || manual(a, b) || a.team.name.localeCompare(b.team.name),
+    );
+    for (let i = 0; i < set.length; i++) {
+      set[i].tied = set.some(
+        (other, j) => i !== j && !head(set[i], other) && !manual(set[i], other),
+      );
+      set[i].position =
+        i > 0 &&
+        head(set[i], set[i - 1]) === 0 &&
+        manual(set[i], set[i - 1]) === 0
+          ? set[i - 1].position
+          : start + i + 1;
+      rows[start + i] = set[i];
+    }
+    start = end;
+  }
+  return rows;
+}
+export function restWarnings(matches: Match[]): Set<string> {
+  const set = new Set<string>();
+  for (let i = 1; i < matches.length; i++) {
+    const a = matches[i - 1],
+      b = matches[i];
+    if ([a.home, a.away].some((t) => t && (t === b.home || t === b.away)))
+      set.add(b.id);
+  }
+  return set;
+}
+export class DomainError extends Error {
+  constructor(
+    message: string,
+    public status = 400,
+  ) {
+    super(message);
+  }
+}
+export function roleFor(
+  c: Competition,
+  userId: string | undefined,
+): Role | undefined {
+  return c.members.find((m) => m.userId === userId)?.role;
+}
+export function canView(c: Competition, userId?: string) {
+  return (
+    !!roleFor(c, userId) || (c.status !== "draft" && c.visibility !== "private")
+  );
+}
+export function applyCommand(
+  original: Competition,
+  user: { id: string; email: string },
+  command: Record<string, unknown>,
+): Competition {
+  const c = structuredClone(original);
+  const role = roleFor(c, user.id);
+  if (!role) throw new DomainError("Anda tidak memiliki akses", 403);
+  if (command.type === "finalize" && command.confirm === true) {
+    const m = c.matches.find((m) => m.id === command.matchId);
+    if (
+      m?.status === "final" &&
+      m.homeScore === command.homeScore &&
+      m.awayScore === command.awayScore &&
+      (m.homePenalty ?? null) === (command.homePenalty ?? null) &&
+      (m.awayPenalty ?? null) === (command.awayPenalty ?? null)
+    )
+      return c;
+  }
+  if (command.version !== c.version)
+    throw new DomainError(
+      "Data telah diperbarui oleh panitia lain. Muat ulang sebelum menyimpan.",
+      409,
+    );
+  const type = String(command.type);
+  const scoring = ["score", "finalize", "correct", "match_status"];
+  if (!scoring.includes(type) && role === "score_operator")
+    throw new DomainError(
+      "Hanya owner atau admin yang dapat melakukan tindakan ini",
+      403,
+    );
+  if (
+    ["archived", "completed", "cancelled"].includes(c.status) &&
+    scoring.includes(type)
+  )
+    throw new DomainError("Kompetisi sudah ditutup");
+  let before: unknown = null,
+    after: unknown = null;
+  let reason: string | null = null;
+  const findMatch = () => {
+    const m = c.matches.find((m) => m.id === command.matchId);
+    if (!m) throw new DomainError("Pertandingan tidak ditemukan", 404);
+    if (command.matchVersion !== m.version)
+      throw new DomainError("Skor telah berubah. Muat ulang.", 409);
+    return m;
+  };
+  if (type === "publish") {
+    if (c.status !== "draft")
+      throw new DomainError("Kompetisi sudah dipublikasikan");
+    if (!c.matches.length) throw new DomainError("Jadwal belum tersedia");
+    c.status = "published";
+  } else if (type === "lifecycle") {
+    const status = z
+      .enum(["completed", "archived", "cancelled"])
+      .parse(command.status);
+    if (c.status === "draft")
+      throw new DomainError("Publikasikan kompetisi terlebih dahulu");
+    if (c.matches.some((m) => m.status === "live"))
+      throw new DomainError("Selesaikan pertandingan live terlebih dahulu");
+    if (
+      status === "completed" &&
+      c.matches.some(
+        (m) => m.status === "scheduled" || m.status === "postponed",
+      )
+    )
+      throw new DomainError("Masih ada pertandingan yang belum selesai");
+    c.status = status;
+  } else if (type === "reorder") {
+    const ids = z.array(z.string()).parse(command.ids);
+    if (
+      ids.length !== c.matches.length ||
+      new Set(ids).size !== ids.length ||
+      ids.some((id) => !c.matches.some((m) => m.id === id))
+    )
+      throw new DomainError("Urutan pertandingan tidak valid");
+    for (const m of c.matches.filter(
+      (m) => m.status !== "scheduled" && m.status !== "postponed",
+    ))
+      if (ids.indexOf(m.id) !== m.order)
+        throw new DomainError(
+          "Pertandingan yang dimulai harus tetap di posisinya",
+        );
+    before = c.matches.map((m) => m.id);
+    c.matches = ids.map((id, order) => ({
+      ...c.matches.find((m) => m.id === id)!,
+      order,
+    }));
+    after = ids;
+  } else if (type === "schedule") {
+    const m = findMatch();
+    if (!["scheduled", "postponed"].includes(m.status))
+      throw new DomainError("Jadwal pertandingan ini sudah terkunci");
+    const at = z
+      .string()
+      .datetime({ offset: true })
+      .nullable()
+      .parse(command.scheduledAt);
+    before = m.scheduledAt;
+    m.scheduledAt = at;
+    m.version++;
+    after = at;
+  } else if (type === "settings") {
+    const v = z
+      .object({
+        name: z.string().trim().min(3).max(100),
+        venue: z.string().max(150),
+        description: z.string().max(1000),
+        visibility: z.enum(["public", "unlisted", "private"]),
+      })
+      .parse(command.settings);
+    before = {
+      name: c.name,
+      venue: c.venue,
+      description: c.description,
+      visibility: c.visibility,
+    };
+    Object.assign(c, v);
+    after = v;
+  } else if (type === "teams") {
+    if (c.status !== "draft")
+      throw new DomainError("Tim terkunci setelah publikasi");
+    const v = z
+      .array(
+        z.object({
+          id: z.string(),
+          name: z.string().trim().min(1).max(60),
+          group: z.string().nullable(),
+        }),
+      )
+      .min(2)
+      .max(32)
+      .parse(command.teams);
+    competitionInput.parse({
+      name: c.name,
+      format: c.format,
+      teamNames: v.map((t) => t.name),
+      ...c.rules,
+    });
+    if (
+      new Set(v.map((t) => t.id)).size !== v.length ||
+      v.some(
+        (t) => !t.id.startsWith("new-") && !c.teams.some((x) => x.id === t.id),
+      )
+    )
+      throw new DomainError("Identitas tim tidak valid");
+    if (!c.format.includes("group") && v.some((t) => t.group !== null))
+      throw new DomainError("Format ini tidak memiliki grup");
+    if (c.format.includes("group")) {
+      const groups = Array.from({ length: c.rules.groups }, (_, i) =>
+        String.fromCharCode(65 + i),
+      );
+      if (
+        v.some((t) => !groups.includes(t.group!)) ||
+        groups.some(
+          (g) =>
+            v.filter((t) => t.group === g).length <
+            Math.max(
+              2,
+              c.format === "group_then_knockout" ? c.rules.qualifiers : 2,
+            ),
+        )
+      )
+        throw new DomainError(
+          "Alokasi grup tidak memenuhi jumlah minimal tim atau tim lolos",
+        );
+    }
+    const changedSchedule =
+      v.length !== c.teams.length ||
+      v.some(
+        (t) => !c.teams.some((old) => old.id === t.id && old.group === t.group),
+      );
+    if (changedSchedule && command.confirm !== true)
+      throw new DomainError(
+        "Perubahan peserta atau grup memerlukan konfirmasi pembuatan ulang jadwal",
+      );
+    before = c.teams;
+    c.teams = v.map((t, i) => {
+      const old = c.teams.find((x) => x.id === t.id);
+      return {
+        id: old?.id || id(),
+        name: t.name,
+        group: t.group,
+        color: old?.color || colors[i % colors.length],
+      };
+    });
+    if (changedSchedule) {
+      c.matches = generateFixtures(c);
+      c.tieOrder = [];
+    }
+    after = c.teams;
+  } else if (type === "rules") {
+    if (c.status !== "draft")
+      throw new DomainError("Aturan terkunci setelah publikasi");
+    if (command.confirm !== true)
+      throw new DomainError("Pembuatan ulang jadwal memerlukan konfirmasi");
+    const input = z.record(z.string(), z.unknown()).parse(command.rules);
+    const v = competitionInput.parse({
+      ...input,
+      name: c.name,
+      format: c.format,
+      teamNames: c.teams.map((t) => t.name),
+    });
+    before = c.rules;
+    if (c.format.includes("group") && v.groups !== c.rules.groups)
+      c.teams = c.teams.map((t, i) => ({
+        ...t,
+        group: String.fromCharCode(65 + (i % v.groups)),
+      }));
+    if (
+      c.format === "group_then_knockout" &&
+      Array.from({ length: v.groups }, (_, i) =>
+        String.fromCharCode(65 + i),
+      ).some((g) => c.teams.filter((t) => t.group === g).length < v.qualifiers)
+    )
+      throw new DomainError("Tim lolos melebihi ukuran grup");
+    c.rules = {
+      meetings: v.meetings,
+      win: v.win,
+      draw: v.draw,
+      loss: v.loss,
+      ranking: v.ranking,
+      groups: v.groups,
+      qualifiers: v.qualifiers,
+      thirdPlace: v.thirdPlace,
+    };
+    c.matches = generateFixtures(c);
+    c.tieOrder = [];
+    after = c.rules;
+  } else if (type === "transfer") {
+    if (role !== "owner")
+      throw new DomainError("Hanya owner dapat memindahkan kepemilikan", 403);
+    if (command.confirm !== true)
+      throw new DomainError("Transfer memerlukan konfirmasi");
+    const target = c.members.find((m) => m.userId === command.userId);
+    if (!target || target.userId === c.ownerId)
+      throw new DomainError("Pilih anggota panitia lain");
+    before = c.ownerId;
+    c.members = c.members.map((m) => ({
+      ...m,
+      role:
+        m.userId === target.userId
+          ? "owner"
+          : m.role === "owner"
+            ? "admin"
+            : m.role,
+    }));
+    c.ownerId = target.userId;
+    after = c.ownerId;
+  } else if (type === "qualify") {
+    if (
+      c.format !== "group_then_knockout" ||
+      c.matches.some((m) => m.stage === "knockout")
+    )
+      throw new DomainError("Bracket tidak dapat dibuat ulang");
+    if (c.matches.some((m) => m.status !== "final" && m.status !== "cancelled"))
+      throw new DomainError("Selesaikan fase grup terlebih dahulu");
+    const qualified: Team[] = [];
+    for (let i = 0; i < c.rules.groups; i++) {
+      const rows = standings(c, String.fromCharCode(65 + i));
+      if (rows.slice(0, c.rules.qualifiers).some((r) => r.tied))
+        throw new DomainError(
+          "Peringkat seri perlu keputusan panitia terlebih dahulu",
+        );
+      qualified.push(...rows.slice(0, c.rules.qualifiers).map((r) => r.team));
+    }
+    c.matches.push(
+      ...knockout(qualified, c.rules.thirdPlace).map((m, i) => ({
+        ...m,
+        order: c.matches.length + i,
+      })),
+    );
+    after = qualified.map((t) => t.id);
+  } else if (type === "resolve_tie") {
+    const ids = z.array(z.string()).parse(command.ids);
+    if (
+      ids.length !== c.teams.length ||
+      new Set(ids).size !== ids.length ||
+      ids.some((id) => !c.teams.some((t) => t.id === id))
+    )
+      throw new DomainError("Keputusan urutan tim tidak valid");
+    reason = z.string().trim().min(5).max(500).parse(command.reason);
+    before = c.tieOrder;
+    c.tieOrder = ids;
+    after = ids;
+  } else if (type === "revoke") {
+    if (command.userId === c.ownerId)
+      throw new DomainError("Owner terakhir tidak dapat dihapus");
+    if (
+      role !== "owner" &&
+      c.members.find((m) => m.userId === command.userId)?.role === "admin"
+    )
+      throw new DomainError("Hanya owner dapat menghapus admin", 403);
+    before = c.members;
+    c.members = c.members.filter((m) => m.userId !== command.userId);
+    after = c.members;
+  } else if (scoring.includes(type)) {
+    if (c.status === "draft")
+      throw new DomainError("Publikasikan kompetisi sebelum mengisi skor");
+    const m = findMatch();
+    before = structuredClone(m);
+    if (type === "match_status") {
+      const status = z
+        .enum(["live", "postponed", "cancelled", "scheduled"])
+        .parse(command.status);
+      const transitions: Record<MatchStatus, string[]> = {
+        scheduled: ["live", "postponed", "cancelled"],
+        live: ["postponed"],
+        postponed: ["scheduled", "cancelled"],
+        final: [],
+        cancelled: role === "score_operator" ? [] : ["scheduled"],
+      };
+      if (!transitions[m.status].includes(status))
+        throw new DomainError("Perubahan status tidak diizinkan");
+      if (status === "live" && (!m.home || !m.away))
+        throw new DomainError("Menunggu peserta dari babak sebelumnya");
+      m.status = status;
+      if (status === "live") c.status = "in_progress";
+    } else {
+      if (!m.home || !m.away) throw new DomainError("Peserta belum lengkap");
+      if (type === "correct") {
+        if (m.status !== "final")
+          throw new DomainError("Hanya hasil final yang dapat dikoreksi");
+        reason = z
+          .string()
+          .trim()
+          .min(5, "Alasan koreksi minimal 5 karakter")
+          .max(500)
+          .parse(command.reason);
+      } else if (!["scheduled", "live"].includes(m.status))
+        throw new DomainError("Skor tidak dapat diubah pada status ini");
+      const scores = z
+        .object({
+          homeScore: z.number().int().min(0).max(999),
+          awayScore: z.number().int().min(0).max(999),
+          homePenalty: z.number().int().min(0).max(999).nullable().optional(),
+          awayPenalty: z.number().int().min(0).max(999).nullable().optional(),
+        })
+        .parse(command);
+      if (type === "score" && m.status !== "live")
+        throw new DomainError("Mulai pertandingan live terlebih dahulu");
+      if (type !== "score" && command.confirm !== true)
+        throw new DomainError("Hasil final memerlukan konfirmasi");
+      let winner: string | null = null;
+      if (type !== "score" && m.stage === "knockout") {
+        if (scores.homeScore !== scores.awayScore)
+          winner = scores.homeScore > scores.awayScore ? m.home : m.away;
+        else if (
+          scores.homePenalty != null &&
+          scores.awayPenalty != null &&
+          scores.homePenalty !== scores.awayPenalty
+        )
+          winner = scores.homePenalty > scores.awayPenalty ? m.home : m.away;
+        else
+          throw new DomainError(
+            "Skor seri di fase gugur membutuhkan hasil penalti yang menentukan pemenang",
+          );
+      }
+      if (type === "correct" && winner !== m.winner) {
+        const dependents = c.matches.filter(
+          (x) => x.sourceHome === m.id || x.sourceAway === m.id,
+        );
+        if (
+          dependents.some((x) => !["scheduled", "postponed"].includes(x.status))
+        )
+          throw new DomainError(
+            "Koreksi diblokir: babak berikutnya sudah dimulai. Perlu resolusi administratif.",
+          );
+      }
+      Object.assign(m, scores);
+      if (type !== "score") {
+        m.status = "final";
+        m.winner = winner;
+        for (const next of c.matches.filter(
+          (x) => x.sourceHome === m.id || x.sourceAway === m.id,
+        )) {
+          const advancing =
+            next.sourceOutcome === "loser"
+              ? winner === m.home
+                ? m.away
+                : m.home
+              : winner;
+          if (next.sourceHome === m.id) next.home = advancing;
+          if (next.sourceAway === m.id) next.away = advancing;
+          next.version++;
+        }
+      }
+      c.status = "in_progress";
+    }
+    m.version++;
+    after = structuredClone(m);
+  } else throw new DomainError("Tindakan tidak dikenal");
+  c.version++;
+  c.audit.push({
+    id: id(),
+    actor: user.email,
+    event: type,
+    reason,
+    before,
+    after,
+    at: new Date().toISOString(),
+  });
+  return c;
+}

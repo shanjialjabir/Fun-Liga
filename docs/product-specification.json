@@ -1,0 +1,951 @@
+{
+    "document": {
+        "name": "Fun Mini Soccer - Master Product and Engineering Specification",
+        "version": "1.0.0",
+        "language": "id-ID",
+        "status": "implementation_blueprint_not_yet_implemented",
+        "purpose": "Dokumen instruksi untuk Codex membangun web app pengelolaan kompetisi mini soccer yang fleksibel, mobile-first, dan dapat dipakai publik.",
+        "instruction_for_codex": "Implementasikan aplikasi berdasarkan spesifikasi ini ketika pengguna memerintahkan pembangunan. Jangan berhenti pada mockup atau halaman statis. Buat aplikasi fungsional dengan database, autentikasi, izin akses, generator fixture, kontrol skor, kalkulasi klasemen, bracket, realtime, serta automated tests. Jika repo sudah ada, audit dan pertahankan struktur yang relevan. Jangan mengklaim fitur berfungsi tanpa menjalankan pengujian. Dokumentasikan keputusan dan asumsi yang belum diputuskan; gunakan default yang eksplisit dalam dokumen ini. Jangan menggunakan tim, hasil, jadwal, atau URL contoh sebagai data produksi."
+    },
+    "product": {
+        "name": "Fun Mini Soccer",
+        "tagline": "Every Match Matters.",
+        "category": "Open multi-tenant football competition management platform",
+        "primary_objective": "Memudahkan penyelenggara membuat kompetisi dan memperbarui hasil setiap pertandingan sehingga peserta dan penonton mudah memantau skor, jadwal, klasemen, dan bracket.",
+        "principles": [
+            "Simple for organizers, informative for players and spectators",
+            "Quick Competition first; advanced settings optional",
+            "One user can manage many independently configured competitions",
+            "Spectators can view public competitions without accounts",
+            "Match data and permissions are enforced on the server",
+            "Mobile-first with strong desktop experience",
+            "Presets are defaults, not restrictive rules"
+        ],
+        "out_of_scope_mvp": [
+            "Permanent team identity and ownership claims",
+            "Player registration, lineups, and player performance history",
+            "Goalscorer/assist/card statistics",
+            "Photo and video galleries",
+            "Push notifications",
+            "Payments, subscriptions, monetization",
+            "Cross-competition rankings",
+            "Native iOS/Android applications"
+        ]
+    },
+    "technology": {
+        "frontend": "Next.js App Router with TypeScript",
+        "styling": "Tailwind CSS",
+        "ui_components": "shadcn/ui with accessible Radix primitives",
+        "database": "PostgreSQL via Supabase",
+        "authentication": "Supabase Auth: email-password and Google OAuth if configured",
+        "realtime": "Supabase Realtime for competition and match subscriptions",
+        "hosting": "Vercel for Next.js, Supabase for data/auth/realtime",
+        "validation": "Zod schemas shared across forms and server boundaries",
+        "forms": "React Hook Form",
+        "testing": "Vitest for unit/integration, Playwright for E2E",
+        "schema_migrations": "Versioned SQL migrations committed to repository",
+        "package_management": "Use package manager already present; otherwise pnpm",
+        "env": [
+            "NEXT_PUBLIC_SUPABASE_URL",
+            "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+            "SUPABASE_SERVICE_ROLE_KEY_SERVER_ONLY",
+            "NEXT_PUBLIC_SITE_URL"
+        ],
+        "security_note": "Never expose service role key to browser, logs, client bundles, or public API responses. OAuth depends on provider configuration; provide setup documentation."
+    },
+    "users_and_permissions": {
+        "registration": "Open signup, login, logout, password reset and email verification where configured",
+        "roles": {
+            "visitor": "May browse publicly listed competitions and view unlisted competitions through link without login, subject to visibility rules",
+            "registered_user": "May create and own competitions, edit own profile, and manage competition roles as granted",
+            "competition_owner": "Full control of owned competition, its settings, members, scheduling, scoring, publication and archive",
+            "competition_admin": "Manage competition teams, schedules, rules and results, but cannot transfer ownership or delete competition",
+            "score_operator": "Start and end games, update live scores, and submit corrections with audit trail; cannot change rules or invite admins",
+            "platform_moderator": "Handle reports and abusive content through protected platform-only access"
+        },
+        "role_scope": "Roles are per competition, not global, except platform_moderator",
+        "membership_invitation": "Owner/admin can invite existing users by email or generate expiring secure invite links; permission assignment must be verified server-side",
+        "access_control": [
+            "All writes authenticate the user and check competition-scoped permission with RLS and server actions",
+            "No user can change another user's competition without authorized membership",
+            "Guests never see edit controls or access private content",
+            "Revoked invite or member loses permission immediately",
+            "Prevent last owner from removing self without ownership transfer",
+            "Do not trust client-provided owner_id, role, result state, or computed standings"
+        ]
+    },
+    "competition": {
+        "supported_formats": [
+            "fourfeo",
+            "league",
+            "group_stage",
+            "knockout",
+            "group_then_knockout"
+        ],
+        "quick_competition": {
+            "flow": [
+                "competition_name",
+                "format",
+                "team_names",
+                "format_specific_settings",
+                "generate_fixtures",
+                "review_and_publish"
+            ],
+            "required_fields": [
+                "name",
+                "format",
+                "number_and_names_of_teams"
+            ],
+            "optional_fields": [
+                "description",
+                "start_date",
+                "end_date",
+                "venue",
+                "location_text",
+                "team_logos",
+                "match_start_times",
+                "duration_minutes"
+            ],
+            "keep_advanced_settings_collapsed_by_default": true
+        },
+        "competition_status": [
+            "draft",
+            "published",
+            "in_progress",
+            "completed",
+            "archived",
+            "cancelled"
+        ],
+        "visibility": {
+            "public": "Visible in discovery and through direct URL",
+            "unlisted": "Accessible by direct link without login, not indexed in internal discovery",
+            "private": "Accessible only to explicitly authorized signed-in members; links alone do not grant access"
+        },
+        "publication": "Starts in draft. Organizer reviews teams, rules and generated fixtures before explicit publication.",
+        "multiple_competitions_per_user": true,
+        "team_model_mvp": {
+            "type": "competition_scoped_simple_teams",
+            "fields": [
+                "name",
+                "optional_logo",
+                "optional_short_name",
+                "optional_color"
+            ],
+            "account_required_for_team": false,
+            "validation": "Names required and unique case-insensitively within one competition; unrelated competitions may repeat team names",
+            "future_upgrade": "Schema may later reference permanent team profiles; preserve historical display-name and logo snapshots"
+        },
+        "competition_rule_defaults": {
+            "win_points": 3,
+            "draw_points": 1,
+            "loss_points": 0,
+            "ranking_tiebreakers": [
+                "points",
+                "goal_difference",
+                "goals_for",
+                "head_to_head",
+                "manual_decision"
+            ],
+            "ranking_tiebreak_note": "Use documented deterministic rules. Multi-team head-to-head needs a mini-table with clear scope; manual resolution must be recorded and audited.",
+            "champion_declaration": "Optional for round-robin formats; don't force champion declaration for casual events",
+            "ranking_enabled": true
+        }
+    },
+    "formats": {
+        "fourfeo": {
+            "description": "Convenience preset for exactly four teams, using round-robin pairs; amount of meetings is chosen by organizer.",
+            "team_count": 4,
+            "default_meetings_per_pair": 2,
+            "allowed_meetings_per_pair": "Any organizer-selected positive integer within configurable operational limits; do not hardcode one or two only",
+            "default_match_count": 12,
+            "default_matches_per_team": 6,
+            "formula": "total_matches = n*(n-1)/2 * meetings_per_pair; for fourfeo n=4",
+            "classification": "One combined table across all meetings when ranking_enabled=true",
+            "ranking_enabled_default": true,
+            "allow_ranking_disable": true,
+            "allow_optional_champion": true,
+            "example_when_meetings_1": 6,
+            "example_when_meetings_2": 12,
+            "example_when_meetings_3": 18
+        },
+        "league": {
+            "round_robin": true,
+            "team_count": "2 or more; configurable upper limit",
+            "meetings_per_pair": "Organizer picks one, two, or more meetings",
+            "ranking": "Single combined standings",
+            "home_away": "Where meaningful, reverse displayed sides on alternating meetings; no requirement for actual home venue"
+        },
+        "group_stage": {
+            "groups": "User chooses number of groups and team allocations before publishing fixtures",
+            "within_group_format": "Round-robin with configurable meetings per pair",
+            "standings": "Independent table for each group",
+            "group_assignment": "Manual or automated balanced allocation; offer review prior to publish",
+            "allow_uneven_groups": "Explicitly support uneven distribution or show a clear validation error if chosen rule requires equal sizes"
+        },
+        "knockout": {
+            "bracket": "Single-elimination bracket with optional third-place game",
+            "team_count": "At least 2, including non powers of two",
+            "byes": "Generate documented byes for non-power-of-two fields",
+            "draw_resolution": [
+                "penalty_shootout",
+                "extra_time_then_penalties",
+                "organizer_decision"
+            ],
+            "winner_requirement": "A completed knockout match must have an unambiguous advancing participant; regular time tie alone cannot advance a team",
+            "advancement": "Automatic, transactional, consistent with bracket edges",
+            "correction_rule": "If correcting a feeder result would alter an already-started downstream match, block and require explicit administrative resolution rather than overwriting history"
+        },
+        "group_then_knockout": {
+            "stage_sequence": [
+                "group_stage",
+                "knockout"
+            ],
+            "qualification": "Organizer sets how many advance per group, with clear bracket mapping",
+            "transition": "Freeze/approve qualified teams before generating or confirming knockout bracket",
+            "tie_handling": "Use group ranking tie-break sequence; require recorded resolution when tied on all rules"
+        }
+    },
+    "fixture_engine": {
+        "generated_match_fields": [
+            "stable_match_id",
+            "stage_id",
+            "group_id_nullable",
+            "home_competition_team_id",
+            "away_competition_team_id",
+            "meeting_number",
+            "display_order",
+            "scheduled_at_nullable",
+            "status"
+        ],
+        "round_robin_algorithm": "Circle-method or another complete deterministic pair-generation algorithm, then multiply by meetings_per_pair and alternate display side when configured",
+        "never_duplicate_pair_meeting": true,
+        "order_strategy": [
+            "standard",
+            "prioritize_rest_between_games",
+            "manual_reorder"
+        ],
+        "manual_reorder": "Allow moving fixtures independently of meeting number and without changing their stable IDs; mobile up/down controls and desktop drag/drop with keyboard alternative",
+        "rest_warning": "Warn, do not prohibit, when the same team plays consecutive games. Rest optimization is best effort and should not claim zero consecutive appearances are always possible.",
+        "after_start_rule": "Keep finished/in-progress fixtures anchored and allow only safe rescheduling of future fixtures without wiping recorded scores",
+        "fixture_regeneration": "Preview changes and require confirmation; preserve completed match IDs/results, refuse destructive changes without explicit handling",
+        "constraints": [
+            "No self-match",
+            "Every scheduled match references valid teams in same competition",
+            "Unique stable match identity",
+            "Schedule order is distinct from match identity",
+            "Prevent accidental duplicate generation"
+        ]
+    },
+    "match_management": {
+        "status": [
+            "scheduled",
+            "live",
+            "final",
+            "postponed",
+            "cancelled"
+        ],
+        "allowed_transitions": {
+            "scheduled": [
+                "live",
+                "final",
+                "postponed",
+                "cancelled"
+            ],
+            "live": [
+                "final",
+                "postponed"
+            ],
+            "postponed": [
+                "scheduled",
+                "cancelled"
+            ],
+            "final": [
+                "correction_workflow"
+            ],
+            "cancelled": [
+                "admin_reactivation_workflow"
+            ]
+        },
+        "score_modes": [
+            "live_score",
+            "direct_final_score"
+        ],
+        "live_score": "Authorized operator adjusts nonnegative integer home/away score; changes become visible on public page promptly after server persistence",
+        "direct_final": "Operator can enter score after match without activating LIVE, then must confirm final result",
+        "final_confirmation": "Explicit confirmation modal summarizing fixture, score, and any knockout winner decision; only confirmed final score enters official standings",
+        "live_standings": "Not official: live matches must not change official standings; optional future provisional mode is out of MVP",
+        "final_score_correction": "Dedicated authenticated correction flow with reason, before/after values, actor, timestamp and audit log; recalculate standings atomically",
+        "concurrent_editing": "Optimistic version check or transactional locking prevents silent lost updates from multiple operators; show conflict and fetch latest data",
+        "offline_handling": "Show connection, save status and retry affordance; never claim a change is saved until server confirms. Full offline write queue is not required in MVP.",
+        "simultaneous_live_matches": "Support multiple live games by data model, even if operator UI favors one selected match at a time",
+        "validation": [
+            "Scores integer >=0",
+            "Only authorized users may write",
+            "Finalization idempotent",
+            "No standings update from unconfirmed scores",
+            "Cross-competition IDs rejected"
+        ],
+        "audit_events": [
+            "match_started",
+            "live_score_changed",
+            "match_finalized",
+            "final_score_corrected",
+            "match_postponed",
+            "match_cancelled",
+            "fixture_reordered",
+            "rules_changed",
+            "competition_published"
+        ]
+    },
+    "standings": {
+        "source_of_truth": "Calculate from official final matches; never maintain manually editable points totals",
+        "columns": [
+            "position",
+            "team",
+            "played",
+            "wins",
+            "draws",
+            "losses",
+            "goals_for",
+            "goals_against",
+            "goal_difference",
+            "points"
+        ],
+        "calculation": {
+            "played": "Number of final matches involving team in corresponding stage/group",
+            "points": "wins * win_points + draws * draw_points + losses * loss_points",
+            "goal_difference": "goals_for - goals_against",
+            "sort": "points descending, then configured tie-breakers applied deterministically",
+            "cancelled_and_postponed": "Exclude from played, points, goals and rankings",
+            "live": "Exclude from official standings",
+            "draw": "Both sides receive draw_points; knockout matches have advancement outcome separate from regulation score"
+        },
+        "initial_state": "All teams visible with zero games and zero points",
+        "ranking_resolution": "If all automated tie-breakers are equal, display unresolved tie and require explicit tournament-resolution decision when determining champion or qualifiers; avoid silently selecting based on entry order"
+    },
+    "ui_ux": {
+        "theme_name": "Dark Sports",
+        "appearance": "Premium, clean, modern sports utility interface with strong typography and minimal decoration",
+        "design_tokens": {
+            "canvas": "#11191B",
+            "surface": "#202B2D",
+            "surface_elevated": "#253537",
+            "accent": "#BCE875",
+            "primary_text": "#F5F7F4",
+            "secondary_text": "#B4C2BB",
+            "live_alert": "#E35D5B",
+            "border": "#364548",
+            "corner_radius_cards_px": 14,
+            "minimum_touch_target_px": 44,
+            "spacing_base_px": 4
+        },
+        "principles": [
+            "Mobile-first",
+            "Clear singular primary CTA per screen",
+            "Large scoreboard digits",
+            "Responsive contrast",
+            "Status text plus color",
+            "Accessible keyboard interaction and focus visibility",
+            "Layouts never depend on hover",
+            "Loading, empty, error and success states on every workflow"
+        ],
+        "responsive": {
+            "mobile": "Single-column cards, bottom primary navigation, compact fixture lists, large score steppers",
+            "tablet": "Two-column content as space allows",
+            "desktop": "Top navigation or left sidebar, wider tables, optional side-by-side score control and fixtures"
+        },
+        "navigation_public": [
+            "Beranda",
+            "Jelajahi",
+            "Kompetisi Saya",
+            "Akun"
+        ],
+        "navigation_admin": [
+            "Ringkasan",
+            "Tim",
+            "Jadwal",
+            "Kontrol Pertandingan",
+            "Klasemen atau Bracket",
+            "Panitia",
+            "Pengaturan"
+        ],
+        "key_shared_components": [
+            "AppShell",
+            "BottomNavigation",
+            "CompetitionCard",
+            "CompetitionStatusBadge",
+            "MatchCard",
+            "LiveScoreboard",
+            "ScoreStepper",
+            "FixtureList",
+            "StandingsTable",
+            "KnockoutBracket",
+            "TeamBadge",
+            "PublicationReview",
+            "ConfirmFinalDialog",
+            "AuditHistory",
+            "EmptyState",
+            "LoadingSkeleton",
+            "ConnectionIndicator"
+        ]
+    },
+    "pages_and_routes": [
+        {
+            "route": "/",
+            "access": "public",
+            "page": "Beranda",
+            "purpose": "Brand, hero CTA, live/current competitions, latest fixtures and discovery entry",
+            "states": [
+                "guest",
+                "logged_in",
+                "no_competitions"
+            ]
+        },
+        {
+            "route": "/explore",
+            "access": "public",
+            "page": "Jelajahi",
+            "purpose": "Search and filter public competitions by title, format and status",
+            "states": [
+                "results",
+                "empty",
+                "loading"
+            ]
+        },
+        {
+            "route": "/auth/sign-in",
+            "access": "public",
+            "page": "Login",
+            "purpose": "Email/password and configured social login"
+        },
+        {
+            "route": "/auth/sign-up",
+            "access": "public",
+            "page": "Daftar",
+            "purpose": "Create user account with validation and terms notice"
+        },
+        {
+            "route": "/auth/reset-password",
+            "access": "public",
+            "page": "Reset Password",
+            "purpose": "Secure password recovery"
+        },
+        {
+            "route": "/dashboard",
+            "access": "authenticated",
+            "page": "Dashboard Saya",
+            "purpose": "Own/shared competitions, filter active/completed/draft, new competition CTA"
+        },
+        {
+            "route": "/competitions/new",
+            "access": "authenticated",
+            "page": "Quick Competition Wizard",
+            "purpose": "Name, visibility, format, regulations, teams, fixtures, preview and publish"
+        },
+        {
+            "route": "/c/[slug]",
+            "access": "visibility_based",
+            "page": "Detail Kompetisi",
+            "purpose": "Summary, current/live match, latest results, next match, progress and share"
+        },
+        {
+            "route": "/c/[slug]/matches",
+            "access": "visibility_based",
+            "page": "Jadwal dan Hasil",
+            "purpose": "All fixtures by stage, status, score and order"
+        },
+        {
+            "route": "/c/[slug]/standings",
+            "access": "visibility_based",
+            "page": "Klasemen",
+            "purpose": "League/fourfeo and each group rankings"
+        },
+        {
+            "route": "/c/[slug]/bracket",
+            "access": "visibility_based",
+            "page": "Bracket",
+            "purpose": "Knockout rounds and advancement; hide when inapplicable"
+        },
+        {
+            "route": "/c/[slug]/teams",
+            "access": "visibility_based",
+            "page": "Daftar Tim",
+            "purpose": "Competition-scoped simple team identities"
+        },
+        {
+            "route": "/dashboard/competitions/[id]",
+            "access": "competition_member",
+            "page": "Admin Ringkasan",
+            "purpose": "Competition management hub and progress"
+        },
+        {
+            "route": "/dashboard/competitions/[id]/teams",
+            "access": "admin_or_owner",
+            "page": "Kelola Tim",
+            "purpose": "Add/edit participant names and optional logos"
+        },
+        {
+            "route": "/dashboard/competitions/[id]/fixtures",
+            "access": "admin_or_owner",
+            "page": "Atur Jadwal",
+            "purpose": "Generate, preview, reorder, reschedule safely, publish"
+        },
+        {
+            "route": "/dashboard/competitions/[id]/matches/[matchId]",
+            "access": "operator_admin_or_owner",
+            "page": "Match Control Center",
+            "purpose": "Live status, score steppers, direct final, confirmation, audited corrections"
+        },
+        {
+            "route": "/dashboard/competitions/[id]/members",
+            "access": "owner_or_admin",
+            "page": "Kelola Panitia",
+            "purpose": "Invite/assign/revoke scoped members"
+        },
+        {
+            "route": "/dashboard/competitions/[id]/settings",
+            "access": "owner_or_admin",
+            "page": "Pengaturan Kompetisi",
+            "purpose": "Rules, visibility, metadata, archival lifecycle with protection for active matches"
+        },
+        {
+            "route": "/account",
+            "access": "authenticated",
+            "page": "Akun",
+            "purpose": "Profile and account settings"
+        }
+    ],
+    "database_schema": {
+        "notes": "All IDs UUID, created_at and updated_at timestamps where relevant, foreign keys and unique indexes. Follow RLS isolation by competition and define update privileges by membership.",
+        "tables": {
+            "profiles": [
+                "id(auth.users reference PK)",
+                "display_name",
+                "avatar_url nullable",
+                "created_at"
+            ],
+            "competitions": [
+                "id",
+                "owner_user_id",
+                "name",
+                "slug unique",
+                "description nullable",
+                "format",
+                "status",
+                "visibility",
+                "venue nullable",
+                "start_at nullable",
+                "end_at nullable",
+                "ranking_enabled",
+                "version",
+                "created_at",
+                "updated_at"
+            ],
+            "competition_members": [
+                "id",
+                "competition_id",
+                "user_id",
+                "role",
+                "invited_by",
+                "joined_at",
+                "unique(competition_id,user_id)"
+            ],
+            "competition_invites": [
+                "id",
+                "competition_id",
+                "email nullable",
+                "role",
+                "token_hash",
+                "expires_at",
+                "accepted_at nullable",
+                "created_by"
+            ],
+            "competition_teams": [
+                "id",
+                "competition_id",
+                "name",
+                "normalized_name",
+                "short_name nullable",
+                "logo_path nullable",
+                "color nullable",
+                "seed nullable",
+                "created_at",
+                "unique(competition_id,normalized_name)"
+            ],
+            "competition_rules": [
+                "competition_id PK",
+                "win_points",
+                "draw_points",
+                "loss_points",
+                "meetings_per_pair",
+                "tiebreakers_json",
+                "third_place_match",
+                "draw_resolution",
+                "qualifiers_config_json",
+                "champion_required",
+                "allow_multiple_live_matches"
+            ],
+            "stages": [
+                "id",
+                "competition_id",
+                "type: round_robin|group|knockout",
+                "name",
+                "stage_order",
+                "status",
+                "stage_config_json"
+            ],
+            "groups": [
+                "id",
+                "stage_id",
+                "name",
+                "group_order"
+            ],
+            "stage_participants": [
+                "id",
+                "stage_id",
+                "group_id nullable",
+                "competition_team_id",
+                "seed nullable",
+                "unique(stage_id,competition_team_id)"
+            ],
+            "matches": [
+                "id",
+                "competition_id",
+                "stage_id",
+                "group_id nullable",
+                "round_number nullable",
+                "meeting_number nullable",
+                "display_order",
+                "home_team_id nullable for unresolved bracket",
+                "away_team_id nullable for unresolved bracket",
+                "scheduled_at nullable",
+                "duration_minutes nullable",
+                "status",
+                "home_score nullable",
+                "away_score nullable",
+                "home_penalty_score nullable",
+                "away_penalty_score nullable",
+                "winner_team_id nullable",
+                "winner_decision_method nullable",
+                "result_confirmed_at nullable",
+                "result_confirmed_by nullable",
+                "row_version",
+                "created_at",
+                "updated_at"
+            ],
+            "bracket_edges": [
+                "id",
+                "source_match_id",
+                "destination_match_id",
+                "destination_slot: home|away",
+                "source_outcome: winner|loser",
+                "unique(destination_match_id,destination_slot)"
+            ],
+            "audit_logs": [
+                "id",
+                "competition_id",
+                "match_id nullable",
+                "actor_user_id",
+                "event_type",
+                "old_values_json",
+                "new_values_json",
+                "reason nullable",
+                "created_at"
+            ],
+            "reports": [
+                "id",
+                "reporter_user_id nullable",
+                "competition_id nullable",
+                "reason",
+                "status",
+                "created_at"
+            ]
+        },
+        "indexes": [
+            "competitions(owner_user_id,status)",
+            "competitions(visibility,status)",
+            "competition_members(user_id,competition_id)",
+            "matches(competition_id,display_order)",
+            "matches(competition_id,status)",
+            "matches(stage_id,group_id)",
+            "audit_logs(competition_id,created_at)"
+        ],
+        "data_integrity": [
+            "Scores cannot be negative",
+            "FK participants belong to match competition",
+            "Published competition requires valid generated schedule",
+            "Competition settings edits cannot corrupt started brackets",
+            "Unique fixture pair per meeting within a round-robin stage and group",
+            "Public read policies exclude private competitions"
+        ]
+    },
+    "server_operations": [
+        "Create, edit, publish, archive competition",
+        "Add/edit/remove simple teams before locked stages",
+        "Generate round-robin fixtures and knockout bracket server-side",
+        "Reorder future fixtures transactionally",
+        "Start match and update live score with row_version compare-and-swap",
+        "Finalize match once, record audit log and publish realtime updates",
+        "Correct final score with reason, audit, recalculation and downstream bracket safeguards",
+        "Invite/revoke members with per-competition role checks",
+        "Compute standings with deterministic configured tie-breakers",
+        "Advance bracket winner atomically after valid final resolution",
+        "Search public competitions while excluding unlisted and private from results"
+    ],
+    "realtime": {
+        "subscriptions": [
+            "Visible competition metadata changes",
+            "Match status and scores",
+            "Fixture order",
+            "Completed match events triggering standings refresh"
+        ],
+        "rules": [
+            "Read authorizations follow visibility",
+            "Server remains authoritative",
+            "Optimistic UI must reconcile with server and rollback on error",
+            "Avoid leaking unpublished/private score events",
+            "Reconnect and refetch snapshot after network interruption"
+        ]
+    },
+    "end_to_end_user_flows": {
+        "organizer": [
+            "Register or sign in",
+            "Go to dashboard",
+            "Choose create competition or Quick Fourfeo",
+            "Enter name and choose visibility",
+            "Choose format and meeting count",
+            "Enter simple team names",
+            "Select basic points and optional advanced rules",
+            "Generate fixtures",
+            "Reorder fixtures and review rest warnings",
+            "Review publication summary",
+            "Publish",
+            "Share URL",
+            "Start matches or submit direct final scores",
+            "Review official standings or bracket",
+            "Correct mistakes with audit reason",
+            "Complete and archive competition"
+        ],
+        "spectator": [
+            "Open public competition directly or find on Explore",
+            "See live/current match",
+            "See schedule and final results",
+            "See standings or bracket",
+            "Refresh not required for realtime updates",
+            "Can share URL without logging in"
+        ],
+        "score_operator": [
+            "Accept invitation and log in",
+            "Open authorized match control page",
+            "Start live or choose direct final",
+            "Increment/decrement scores via large buttons",
+            "Confirm final result",
+            "Observe successful save",
+            "Move to next scheduled match",
+            "Use audited correction flow if necessary"
+        ]
+    },
+    "acceptance_tests": {
+        "fixture_generation": [
+            "Fourfeo 4 teams and 1 meeting produces exactly 6 unique pairings",
+            "Fourfeo 4 teams and 2 meetings produces exactly 12 matches and each team appears in 6",
+            "Fourfeo 4 teams and 3 meetings produces exactly 18 matches",
+            "Changing display_order never changes match ID, pair, or scores",
+            "Rest-warning accurately identifies adjacent fixtures sharing a team",
+            "League double round-robin pairs each opponent twice",
+            "Group fixtures remain within their group",
+            "Knockout with non-power-of-two teams assigns byes without phantom played matches"
+        ],
+        "scoring_and_rankings": [
+            "0-0 scheduled match has no standings impact",
+            "Live score appears publicly but official table remains unchanged",
+            "Confirming Garuda FC 2-1 Elang FC gives Garuda FC 3 points, played 1, GD +1; Elang 0 points, GD -1",
+            "Final correction to Garuda FC 1-1 Elang FC makes both receive 1 point and updates GD to 0",
+            "All standings aggregate both meetings for Fourfeo",
+            "Postponed and cancelled matches never count as played",
+            "Final knockout tie without recorded advancing winner cannot populate next round",
+            "Downstream started bracket match is protected against unsafe feeder correction",
+            "Same-score rank ties do not silently select a champion"
+        ],
+        "access_and_security": [
+            "Unauthenticated visitor can see public competition",
+            "Unlisted competition is absent from Explore but reachable by direct URL",
+            "Private competition is not visible to unauthorized visitor even with slug",
+            "Unauthorized user cannot update score through direct server request",
+            "Score operator cannot change competition rules",
+            "Admin cannot transfer owner status without owner permission",
+            "Private realtime channels and server responses do not leak scores",
+            "Concurrent score updates detect conflict, not silent overwrite"
+        ],
+        "quality": [
+            "Mobile score steppers meet 44px touch targets",
+            "All public and admin pages have loading/empty/error states",
+            "Keyboard navigation and focus indicators work",
+            "Core Vitest suite passes",
+            "Playwright E2E flows pass for owner, operator and visitor",
+            "Typecheck, lint and production build pass",
+            "No seeded sample competition appears in production",
+            "README includes setup, env variables, Supabase migration and deployment instructions"
+        ]
+    },
+    "simulation_reference_only": {
+        "competition": "Fourfeo Mini Soccer",
+        "teams": [
+            "Garuda FC",
+            "Elang FC",
+            "Rajawali FC",
+            "Singa FC"
+        ],
+        "format": "fourfeo",
+        "meetings_per_pair": 2,
+        "matches_total": 12,
+        "ranking_enabled": true,
+        "win_points": 3,
+        "visibility": "public",
+        "fixtures_in_approved_order": [
+            {
+                "code": "M01",
+                "home": "Garuda FC",
+                "away": "Elang FC"
+            },
+            {
+                "code": "M02",
+                "home": "Rajawali FC",
+                "away": "Singa FC"
+            },
+            {
+                "code": "M03",
+                "home": "Garuda FC",
+                "away": "Rajawali FC"
+            },
+            {
+                "code": "M04",
+                "home": "Elang FC",
+                "away": "Singa FC"
+            },
+            {
+                "code": "M05",
+                "home": "Garuda FC",
+                "away": "Singa FC"
+            },
+            {
+                "code": "M06",
+                "home": "Elang FC",
+                "away": "Rajawali FC"
+            },
+            {
+                "code": "M07",
+                "home": "Elang FC",
+                "away": "Garuda FC"
+            },
+            {
+                "code": "M08",
+                "home": "Singa FC",
+                "away": "Rajawali FC"
+            },
+            {
+                "code": "M09",
+                "home": "Rajawali FC",
+                "away": "Garuda FC"
+            },
+            {
+                "code": "M10",
+                "home": "Singa FC",
+                "away": "Elang FC"
+            },
+            {
+                "code": "M11",
+                "home": "Singa FC",
+                "away": "Garuda FC"
+            },
+            {
+                "code": "M12",
+                "home": "Rajawali FC",
+                "away": "Elang FC"
+            }
+        ],
+        "usage": "Use this data only in local demo seed/test fixtures; never publish as a real competition by default."
+    },
+    "implementation_sequence": [
+        {
+            "phase": 1,
+            "title": "Repository setup and design foundation",
+            "deliverables": [
+                "Next.js TypeScript setup",
+                "Tailwind and shared UI components",
+                "Dark Sports tokens",
+                "responsive app shell",
+                "environment example and README"
+            ]
+        },
+        {
+            "phase": 2,
+            "title": "Database, auth, and permissions",
+            "deliverables": [
+                "Supabase SQL migrations",
+                "RLS policies",
+                "sign-up/sign-in/reset",
+                "competition-scoped roles and invitation flows"
+            ]
+        },
+        {
+            "phase": 3,
+            "title": "Competition creation and team management",
+            "deliverables": [
+                "dashboard",
+                "quick competition wizard",
+                "simple teams",
+                "draft/publish/visibility states"
+            ]
+        },
+        {
+            "phase": 4,
+            "title": "Competition engine",
+            "deliverables": [
+                "fourfeo and league round-robin generator",
+                "group-stage generation",
+                "single elimination bracket",
+                "safe order editing",
+                "rules validation",
+                "unit tests"
+            ]
+        },
+        {
+            "phase": 5,
+            "title": "Scoring, standings, and realtime",
+            "deliverables": [
+                "match control center",
+                "live and direct-final flows",
+                "result correction audit",
+                "official standings",
+                "bracket advancement",
+                "realtime public page"
+            ]
+        },
+        {
+            "phase": 6,
+            "title": "Polish, E2E, and deployment readiness",
+            "deliverables": [
+                "responsive refinement",
+                "accessibility",
+                "error/loading states",
+                "E2E tests",
+                "production build",
+                "deployment documentation"
+            ]
+        }
+    ],
+    "definition_of_done": {
+        "functional": "An independent organizer can register, create public Fourfeo with four teams and two meetings, auto-generate and reorder 12 fixtures, publish, update live and final scores, see correct standings, share public page and archive results. Other formats must also pass format-specific tests.",
+        "reliability": "No unauthorized writes, score loss, hidden RLS failures, fabricated success notifications or corrupt bracket advancement.",
+        "delivery": [
+            "Working source code",
+            "SQL migrations and RLS",
+            "Automated tests",
+            "Documented environment setup",
+            "Responsive public and admin UX",
+            "No hardcoded example results in production"
+        ],
+        "reporting": "At each phase explain completed work, files changed, tests actually run with results, current limitations, and next steps. Never describe an unimplemented feature as complete."
+    }
+}
