@@ -325,3 +325,176 @@ test("responsive empty homepage and keyboard navigation", async ({ page }) => {
     "BODY",
   );
 });
+
+test("owner can permanently delete drafts and archived competitions with name confirmation", async ({
+  page,
+  browser,
+}) => {
+  await page.request.post("/api/demo-login", {
+    data: { email: "delete-owner@example.test", name: "Delete Owner" },
+  });
+  const input = {
+    name: "Kompetisi salah buat",
+    format: "fourfeo",
+    visibility: "private",
+    teamNames: ["A", "B", "C", "D"],
+  };
+  const c = await (
+    await page.request.post("/api/competitions", { data: input })
+  ).json();
+  const control = await (
+    await page.request.post("/api/competitions", {
+      data: { ...input, name: "Kompetisi tetap tersimpan" },
+    })
+  ).json();
+  const endpoint = `/api/competitions/${c.id}`;
+  const invite = await (
+    await page.request.post(`${endpoint}/invites`, {
+      data: { role: "score_operator" },
+    })
+  ).json();
+  for (const role of ["admin", "score_operator"] as const) {
+    const context = await browser.newContext();
+    try {
+      await context.request.post("/api/demo-login", {
+        data: { email: `delete-${role}@example.test`, name: role },
+      });
+      const token = await (
+        await page.request.post(`${endpoint}/invites`, { data: { role } })
+      ).json();
+      expect(
+        (
+          await context.request.post("/api/invite", {
+            data: { token: token.token },
+          })
+        ).ok(),
+      ).toBe(true);
+      const snapshot = await (await page.request.get(endpoint)).json();
+      expect(
+        (
+          await context.request.delete(endpoint, {
+            data: { name: c.name, version: snapshot.version },
+          })
+        ).status(),
+      ).toBe(403);
+      const memberPage = await context.newPage();
+      await memberPage.goto(`/dashboard/competitions/${c.id}/settings`);
+      await expect(
+        memberPage.getByRole("heading", { name: c.name, exact: true }),
+      ).toBeVisible();
+      await expect(
+        memberPage.getByRole("button", {
+          name: "Hapus kompetisi",
+          exact: true,
+        }),
+      ).toHaveCount(0);
+    } finally {
+      await context.close();
+    }
+  }
+  let latest = await (await page.request.get(endpoint)).json();
+  expect(
+    (
+      await page.request.delete(endpoint, {
+        data: { name: "Salah", version: latest.version },
+      })
+    ).status(),
+  ).toBe(400);
+  expect(
+    (
+      await page.request.delete(endpoint, {
+        data: { name: c.name, version: c.version },
+      })
+    ).status(),
+  ).toBe(409);
+  expect(
+    (await page.request.delete(endpoint, { data: { name: c.name } })).status(),
+  ).toBe(400);
+  expect(
+    (
+      await page.request.delete(endpoint, {
+        headers: { origin: "https://attacker.test" },
+        data: { name: c.name, version: latest.version },
+      })
+    ).status(),
+  ).toBe(403);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/dashboard/competitions/${c.id}/settings`);
+  await page
+    .getByRole("button", { name: "Hapus kompetisi", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Hapus permanen", exact: true }),
+  ).toBeDisabled();
+  await page.getByLabel("Nama kompetisi untuk konfirmasi").fill("Salah");
+  await expect(
+    page.getByRole("button", { name: "Hapus permanen", exact: true }),
+  ).toBeDisabled();
+  await page.getByRole("button", { name: "Kembali", exact: true }).click();
+  expect((await page.request.get(endpoint)).ok()).toBe(true);
+  await page
+    .getByRole("button", { name: "Hapus kompetisi", exact: true })
+    .click();
+  await page.getByLabel("Nama kompetisi untuk konfirmasi").fill(c.name);
+  await page.screenshot({
+    path: "test-results/delete-confirmation-mobile.png",
+  });
+  await page
+    .getByRole("button", { name: "Hapus permanen", exact: true })
+    .click();
+  await expect(page).toHaveURL(/\/dashboard$/);
+  expect((await page.request.get(endpoint)).status()).toBe(404);
+  expect((await page.request.get(`/api/competitions/${c.slug}`)).status()).toBe(
+    404,
+  );
+  expect((await page.request.get(`/api/competitions/${control.id}`)).ok()).toBe(
+    true,
+  );
+  expect(
+    (
+      await page.request.post("/api/invite", { data: { token: invite.token } })
+    ).status(),
+  ).toBe(400);
+  await page.reload();
+  await expect(page.getByText(c.name, { exact: true })).toHaveCount(0);
+  for (const status of ["published", "archived"] as const) {
+    latest = await (
+      await page.request.post("/api/competitions", {
+        data: { ...input, name: `Delete ${status}`, visibility: "public" },
+      })
+    ).json();
+    latest = await (
+      await page.request.patch(`/api/competitions/${latest.id}`, {
+        data: { type: "publish", version: latest.version },
+      })
+    ).json();
+    if (status === "archived")
+      latest = await (
+        await page.request.patch(`/api/competitions/${latest.id}`, {
+          data: { type: "lifecycle", status, version: latest.version },
+        })
+      ).json();
+    const guest = await browser.newContext();
+    try {
+      expect(
+        (
+          await guest.request.delete(`/api/competitions/${latest.id}`, {
+            data: { name: latest.name, version: latest.version },
+          })
+        ).status(),
+      ).toBe(401);
+    } finally {
+      await guest.close();
+    }
+    expect(
+      (
+        await page.request.delete(`/api/competitions/${latest.id}`, {
+          data: { name: latest.name, version: latest.version },
+        })
+      ).ok(),
+    ).toBe(true);
+    expect(
+      (await page.request.get(`/api/competitions/${latest.id}`)).status(),
+    ).toBe(404);
+  }
+});

@@ -17,6 +17,7 @@ import {
   getCompetition,
   bySlug,
   saveCompetition,
+  deleteCompetition,
   createInvite,
   acceptInvite,
   listInvites,
@@ -105,6 +106,28 @@ async function handle(
       if (path.length === 2 && method === "GET")
         return NextResponse.json(safe(c, user?.id));
       if (!user) throw new DomainError("Silakan masuk terlebih dahulu", 401);
+      if (path.length === 2 && method === "DELETE") {
+        if (roleFor(c, user.id) !== "owner")
+          throw new DomainError("Hanya pemilik dapat menghapus kompetisi", 403);
+        const input = z
+          .object({
+            name: z.string().min(1).max(100),
+            version: z.number().int().nonnegative(),
+          })
+          .parse(await request.json());
+        if (input.version !== c.version)
+          throw new DomainError(
+            "Data kompetisi berubah. Muat ulang sebelum menghapus.",
+            409,
+          );
+        if (input.name !== c.name)
+          throw new DomainError(
+            "Nama konfirmasi harus sama dengan nama kompetisi",
+            400,
+          );
+        await deleteCompetition(c.id, user.id, input.version, input.name);
+        return NextResponse.json({ ok: true });
+      }
       if (path[2] === "invites") {
         const role = roleFor(c, user.id);
         if (!role || role === "score_operator")

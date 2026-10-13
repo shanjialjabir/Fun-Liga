@@ -34,6 +34,7 @@ import {
   Sparkles,
   Swords,
   Trophy,
+  Trash2,
   Users,
   Wifi,
   WifiOff,
@@ -2182,6 +2183,8 @@ function CompetitionView({
       ) : activeTab === "settings" && admin ? (
         <CompetitionSettings
           c={c}
+          owner={role === "owner"}
+          notify={notify}
           command={command}
           lifecycle={setConfirmLifecycle}
         />
@@ -3258,13 +3261,38 @@ function Members({
 }
 function CompetitionSettings({
   c,
+  owner,
+  notify,
   command,
   lifecycle,
 }: {
   c: Competition;
+  owner: boolean;
+  notify: (message: string) => void;
   command: (data: Record<string, unknown>) => Promise<Competition>;
   lifecycle: (s: string) => void;
 }) {
+  const router = useRouter();
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteName, setDeleteName] = useState("");
+  const [deleteError, setDeleteError] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const remove = async () => {
+    if (deleting || deleteName !== c.name) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await api(`competitions/${c.id}`, {
+        method: "DELETE",
+        body: JSON.stringify({ name: deleteName, version: c.version }),
+      });
+      notify("Kompetisi berhasil dihapus");
+      router.push("/dashboard");
+    } catch (e) {
+      setDeleteError((e as Error).message);
+      setDeleting(false);
+    }
+  };
   const { register, handleSubmit } = useForm({
     defaultValues: {
       name: c.name,
@@ -3355,7 +3383,74 @@ function CompetitionSettings({
             Batalkan
           </button>
         </div>
+        {owner && (
+          <>
+            <hr />
+            <div className="form-stack">
+              <h3>Hapus kompetisi</h3>
+              <p className="muted">
+                Hapus permanen kompetisi beserta tim, jadwal, skor, hasil,
+                riwayat perubahan, akses panitia, dan undangannya. Tindakan ini
+                tidak dapat dibatalkan.
+              </p>
+              <button
+                className="button danger"
+                disabled={busy || deleting}
+                onClick={() => {
+                  setDeleteName("");
+                  setDeleteError("");
+                  setDeleteOpen(true);
+                }}
+              >
+                <Trash2 size={16} /> Hapus kompetisi
+              </button>
+            </div>
+          </>
+        )}
       </section>
+      <Modal
+        open={deleteOpen}
+        onClose={() => {
+          if (!deleting) setDeleteOpen(false);
+        }}
+        title="Hapus kompetisi permanen?"
+        description="Seluruh data kompetisi akan dihapus dan tidak dapat dipulihkan."
+      >
+        <div className="form-stack">
+          <p>
+            Untuk mengonfirmasi, ketik nama kompetisi: <b>{c.name}</b>
+          </p>
+          <label>
+            Nama kompetisi untuk konfirmasi
+            <input
+              value={deleteName}
+              onChange={(e) => setDeleteName(e.target.value)}
+              disabled={deleting}
+              autoComplete="off"
+              maxLength={100}
+            />
+          </label>
+          {deleteError && (
+            <div className="alert error" role="alert">
+              {deleteError}
+            </div>
+          )}
+          <button
+            className="button danger full"
+            disabled={deleting || deleteName !== c.name}
+            onClick={() => void remove()}
+          >
+            <Trash2 size={16} /> {deleting ? "Menghapus…" : "Hapus permanen"}
+          </button>
+          <button
+            className="button secondary full"
+            disabled={deleting}
+            onClick={() => setDeleteOpen(false)}
+          >
+            Kembali
+          </button>
+        </div>
+      </Modal>
       <section className="panel">
         <div className="panel-heading">
           <div>

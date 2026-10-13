@@ -125,7 +125,34 @@ export async function api<T>(
       else {
         if (!user) throw new ApiError("Masuk terlebih dahulu", 401);
         const role = roleFor(c, user.id);
-        if (parts[2] === "invites") {
+        if (parts.length === 2 && method === "DELETE") {
+          if (roleFor(c, user.id) !== "owner")
+            throw new ApiError("Hanya pemilik dapat menghapus kompetisi", 403);
+          const input = z
+            .object({
+              name: z.string().min(1).max(100),
+              version: z.number().int().nonnegative(),
+            })
+            .parse(body);
+          if (input.version !== c.version)
+            throw new ApiError(
+              "Data kompetisi berubah. Muat ulang sebelum menghapus.",
+              409,
+            );
+          if (input.name !== c.name)
+            throw new ApiError(
+              "Nama konfirmasi harus sama dengan nama kompetisi",
+              400,
+            );
+          state.competitions = state.competitions.filter(
+            (item) => item.id !== c.id,
+          );
+          state.invites = state.invites.filter(
+            (item) => item.competition_id !== c.id,
+          );
+          save(state);
+          result = { ok: true };
+        } else if (parts[2] === "invites") {
           if (!role || role === "score_operator")
             throw new ApiError("Akses terbatas", 403);
           if (method === "GET")

@@ -170,6 +170,54 @@ export async function saveCompetition(
       error.message.includes("conflict") ? 409 : 503,
     );
 }
+export async function deleteCompetition(
+  id: string,
+  ownerId: string,
+  version: number,
+  name: string,
+) {
+  if (demoMode) {
+    const database = db();
+    database.exec("BEGIN IMMEDIATE");
+    try {
+      const result = database
+        .prepare(
+          "DELETE FROM competitions WHERE id=? AND version=? AND json_extract(data,'$.ownerId')=? AND json_extract(data,'$.name')=?",
+        )
+        .run(id, version, ownerId, name);
+      if (!result.changes)
+        throw new DomainError(
+          "Data kompetisi berubah. Muat ulang sebelum menghapus.",
+          409,
+        );
+      database.prepare("DELETE FROM invites WHERE competition_id=?").run(id);
+      database.exec("COMMIT");
+    } catch (error) {
+      database.exec("ROLLBACK");
+      throw error;
+    }
+    return;
+  }
+  // Owner, version and confirmation are checked in the same atomic deletion.
+  // Foreign keys also delete memberships, invitations and realtime events.
+  const { data, error } = await supabase()
+    .from("competitions")
+    .delete()
+    .eq("id", id)
+    .eq("owner_user_id", ownerId)
+    .eq("version", version)
+    .eq("data->>name", name)
+    .select("id")
+    .maybeSingle();
+  if (error)
+    throw new DomainError("Gagal menghapus kompetisi. Silakan coba lagi.", 503);
+  if (!data)
+    throw new DomainError(
+      "Data kompetisi berubah. Muat ulang sebelum menghapus.",
+      409,
+    );
+}
+
 export async function createInvite(
   competitionId: string,
   role: "admin" | "score_operator",

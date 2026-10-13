@@ -52,6 +52,72 @@ afterAll(async () => {
   await pg?.close();
 });
 describe("PostgreSQL migration, RLS and transactional RPC", () => {
+  it("deletes only the matching owner/version/name and cascades related data", async () => {
+    const target = createCompetition(
+      {
+        name: "Delete database test",
+        format: "fourfeo",
+        teamNames: ["A", "B", "C", "D"],
+        visibility: "private",
+      },
+      owner,
+    );
+    await asRole(
+      "service_role",
+      null,
+      "SELECT save_competition($1::jsonb,null)",
+      [JSON.stringify(target)],
+    );
+    await pg.query(
+      "INSERT INTO competition_invites(token_hash,competition_id,role,expires_at) VALUES($1,$2,'admin',$3)",
+      ["delete-invite", target.id, Date.now() + 60000],
+    );
+    await expect(
+      asRole(
+        "authenticated",
+        owner.id,
+        "DELETE FROM competitions WHERE id=$1",
+        [target.id],
+      ),
+    ).rejects.toThrow("permission denied");
+    const sql =
+      "DELETE FROM competitions WHERE id=$1 AND owner_user_id=$2 AND version=$3 AND data->>'name'=$4 RETURNING id";
+    for (const params of [
+      [target.id, stranger, target.version, target.name],
+      [target.id, owner.id, target.version + 1, target.name],
+      [target.id, owner.id, target.version, "Wrong name"],
+    ])
+      expect(
+        (await asRole("service_role", null, sql, params)).rows,
+      ).toHaveLength(0);
+    expect(
+      (
+        await asRole("service_role", null, sql, [
+          target.id,
+          owner.id,
+          target.version,
+          target.name,
+        ])
+      ).rows,
+    ).toEqual([{ id: target.id }]);
+    for (const table of [
+      "competitions",
+      "competition_members",
+      "competition_invites",
+      "competition_events",
+    ])
+      expect(
+        (
+          await pg.query(
+            `SELECT * FROM ${table} WHERE ${table === "competitions" ? "id" : "competition_id"}=$1`,
+            [target.id],
+          )
+        ).rows,
+      ).toHaveLength(0);
+    expect(
+      (await pg.query("SELECT id FROM competitions WHERE id=$1", [c.id])).rows,
+    ).toHaveLength(1);
+  });
   it("stores aggregate and owner membership", async () => {
     const result = await pg.query<{ data: typeof c }>(
       "SELECT data FROM competitions WHERE id=$1",

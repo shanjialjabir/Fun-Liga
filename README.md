@@ -46,6 +46,7 @@ Demo menggunakan SQLite bawaan Node.js di `.data/demo.sqlite`. Data dan session 
 - Bracket maju otomatis; koreksi yang mengubah pemenang diblokir jika pertandingan turunannya sudah dimulai. Grup + gugur memerlukan persetujuan kualifikasi.
 - Undangan sekali pakai selama 72 jam, batasan email opsional, admin/operator per kompetisi, pencabutan undangan/akses, dan transfer owner dengan konfirmasi.
 - Version compare-and-swap untuk konflik pembaruan, audit sebelum/sesudah, penyelesaian dan arsip.
+- Pemilik dapat menghapus permanen kompetisi, termasuk draft, melalui Pengaturan → Hapus kompetisi. Konfirmasi harus memakai nama kompetisi persis. Tim, jadwal, hasil, riwayat, akses panitia, dan undangan terkait ikut terhapus; kompetisi lainnya tetap tersimpan.
 - Tampilan desktop/seluler, navigasi bawah, tombol skor 44 px, dialog dengan focus trap, menu seluler dengan keyboard/Escape, dan indikator koneksi.
 
 ## Supabase untuk deployment
