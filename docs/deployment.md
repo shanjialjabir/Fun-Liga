@@ -21,6 +21,7 @@ Production HTTPS/API checks verified:
 - Private isolation, scoped operator permissions, one-use invitations, immediate revocation, and stale-update HTTP 409.
 - Sanitized public responses and permitted realtime event signals; anonymous direct aggregate reads denied.
 - Archive behavior.
+- Owner-only permanent deletion of draft, published, and archived competitions, exact-name confirmation, stale-version rejection, and cascading removal of memberships, invitations, and realtime events. Deleted URLs return 404 and deleted invitations cannot be accepted. An independent competition remains intact. Verified using temporary production accounts and competitions; only those test resources were removed afterward.
 
 All temporary users, competition data, invitations and event rows used for testing were removed. No sample competition was published in discovery.
 
