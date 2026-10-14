@@ -42,6 +42,7 @@ Demo menggunakan SQLite bawaan Node.js di `.data/demo.sqlite`. Data dan session 
 - Ubah nama, tambah/hapus tim (selain Fourfeo), alokasi grup, serta aturan pada draft. Perubahan struktur memerlukan tinjauan dan konfirmasi sebelum membuat ulang jadwal.
 - Publikasi eksplisit; publik ditemukan di Jelajahi, tautan saja hanya melalui URL, privat hanya untuk panitia. Draft tidak terlihat oleh penonton.
 - Mulai live, simpan skor, masukkan hasil final langsung, konfirmasi final, koreksi dengan alasan, tunda/batalkan, serta waktu pertandingan.
+- Ketuk baris pertandingan untuk mencatat gol. Nama pencetak gol dan assist memakai saran nama bersama per tim; huruf besar/kecil dan spasi berlebih tidak membuat pemain baru. Skor mengikuti penambahan, pengeditan, dan penghapusan gol. Gol bunuh diri masuk ke tim lawan tanpa statistik gol/assist. Tab Top skor & assist hanya menghitung pertandingan final. Gol lama dapat dilengkapi tanpa menambah skor; koreksi setelah final memerlukan alasan dan konfirmasi.
 - Klasemen resmi hanya menghitung final; multi-team head-to-head menggunakan mini-table. Seri tetap ditandai dan dapat diresolusikan melalui keputusan panitia yang diaudit.
 - Bracket maju otomatis; koreksi yang mengubah pemenang diblokir jika pertandingan turunannya sudah dimulai. Grup + gugur memerlukan persetujuan kualifikasi.
 - Undangan sekali pakai selama 72 jam, batasan email opsional, admin/operator per kompetisi, pencabutan undangan/akses, dan transfer owner dengan konfirmasi.

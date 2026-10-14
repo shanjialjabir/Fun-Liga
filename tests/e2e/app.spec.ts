@@ -93,6 +93,9 @@ test("owner creates Fourfeo; operator and spectator permissions, scoring, confli
   await expect(
     page.getByRole("dialog").getByText("Tersimpan di server"),
   ).toBeVisible();
+  await page
+    .getByText("Skor lama / tanpa catatan pemain", { exact: true })
+    .click();
   await page.getByRole("button", { name: "Tambah skor tuan rumah" }).click();
   await page.getByRole("button", { name: "Tambah skor tuan rumah" }).click();
   await page.getByRole("button", { name: "Tambah skor tamu" }).click();
@@ -117,6 +120,9 @@ test("owner creates Fourfeo; operator and spectator permissions, scoring, confli
     .toContain("3");
   await page
     .getByRole("button", { name: "Kelola pertandingan 1", exact: true })
+    .click();
+  await page
+    .getByText("Skor lama / tanpa catatan pemain", { exact: true })
     .click();
   await page.getByRole("button", { name: "Kurangi skor tuan rumah" }).click();
   await page

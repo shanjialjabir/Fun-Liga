@@ -4064,3 +4064,276 @@ small {
 .preview-pairs small {
   color: var(--muted);
 }
+
+/* Goal recording and player statistics. */
+.fixture-row {
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+.fixture-row:hover {
+  background: #adec250c;
+}
+.fixture-row:focus-within {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+.match-tap-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: 10px;
+  text-align: left;
+}
+.match-goals {
+  display: grid;
+  gap: 18px;
+  margin: 20px 0;
+}
+.goal-team-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.goal-team-actions .button {
+  padding: 11px 10px;
+  white-space: normal;
+}
+.goal-entry,
+.goal-correction {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #111111;
+  padding: 18px;
+}
+.goal-entry-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.goal-kind {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.goal-kind button {
+  border: 1px solid var(--border);
+  background: transparent;
+  border-radius: 8px;
+  padding: 12px;
+  min-height: 44px;
+}
+.goal-kind button.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: #adec250d;
+}
+.goal-note {
+  font-size: 12px;
+  color: var(--accent);
+}
+.player-autocomplete {
+  position: relative;
+  display: grid;
+  gap: 7px;
+}
+.player-autocomplete label {
+  display: block;
+}
+.player-autocomplete small {
+  font-size: 11px;
+  color: var(--muted);
+}
+.player-suggestions {
+  position: absolute;
+  inset: 74px 0 auto;
+  background: #1c1c1c;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 12px 28px #0009;
+  z-index: 4;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.player-suggestions button {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 12px;
+  min-height: 44px;
+}
+.player-suggestions button:hover,
+.player-suggestions button[aria-selected="true"] {
+  background: #adec2518;
+  color: var(--accent);
+}
+.check-label {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: flex-start;
+  gap: 10px;
+}
+.check-label input {
+  flex: 0 0 18px;
+  margin-top: 3px;
+}
+.goal-timeline {
+  display: grid;
+  gap: 10px;
+}
+.goal-event {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid var(--border);
+  background: #111111;
+  border-radius: 10px;
+  padding: 13px;
+}
+.goal-minute {
+  min-width: 30px;
+  color: var(--accent);
+}
+.goal-event-info {
+  display: grid;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.goal-event-info small {
+  color: var(--muted);
+}
+.goal-event-actions {
+  display: flex;
+  gap: 2px;
+}
+.goal-delete {
+  color: var(--red);
+}
+.legacy-goals-note {
+  color: #ffab1a;
+  font-size: 12px;
+}
+.recorded-score {
+  display: block;
+  font-size: 40px;
+  color: var(--accent);
+  margin-top: 10px;
+}
+.spectator-match-score {
+  display: grid;
+  text-align: center;
+  justify-items: center;
+  gap: 14px;
+  margin-bottom: 25px;
+}
+.spectator-match-score > strong {
+  font-size: 38px;
+  color: var(--accent);
+}
+.player-leaders {
+  padding: 24px;
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 14px;
+}
+.player-leader-panel {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  min-width: 0;
+}
+.player-leader-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.player-leader-row > div {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.player-leader-row small {
+  color: var(--muted);
+}
+.player-leader-row > strong {
+  font-size: 22px;
+  color: var(--accent);
+}
+@media (max-width: 600px) {
+  .goal-entry,
+  .goal-correction {
+    padding: 14px;
+  }
+  .goal-event {
+    padding: 10px;
+    gap: 7px;
+  }
+  .goal-event .team-mark {
+    display: none;
+  }
+  .goal-event-actions {
+    flex-direction: column;
+  }
+  .player-leaders {
+    padding: 16px;
+  }
+  .player-leaders .two-cols {
+    grid-template-columns: 1fr;
+  }
+  .match-tap-hint {
+    font-size: 10px;
+  }
+}
+.legacy-score-tools {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  margin: 18px 0;
+}
+.legacy-score-tools summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+}
+.legacy-score-tools > p {
+  margin: 12px 0;
+  font-size: 12px;
+}
+.legacy-score-tools .score-stepper {
+  max-width: 190px;
+}
+.match-control:has(.goal-entry) > .control-teams,
+.match-control:has(.goal-entry) > .legacy-score-tools,
+.match-goals:has(.goal-entry) > .goal-team-actions {
+  display: none;
+}
+.match-control:has(.goal-entry) > .form-stack,
+.match-control:has(.goal-entry) > .advanced {
+  display: none;
+}
+.goal-entry.form-stack {
+  gap: 12px;
+}
+.goal-save {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  box-shadow: 0 -8px 20px #0006;
+}

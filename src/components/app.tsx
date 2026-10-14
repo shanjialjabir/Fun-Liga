@@ -57,6 +57,7 @@ import {
   type Role,
 } from "@/lib/competition";
 import { Modal, Badge, TeamMark, Empty, Loading } from "./ui";
+import { MatchGoals, GoalTimeline, PlayerLeaders } from "./match-goals";
 
 type User = { id: string; email: string; name: string };
 const formatIcons = {
@@ -1672,6 +1673,7 @@ function CompetitionView({
       ? [{ key: "bracket", label: "Bracket", icon: Swords }]
       : []),
     { key: "teams", label: "Tim", icon: Shield },
+    { key: "players", label: "Top skor & assist", icon: Trophy },
     ...(edit
       ? [{ key: "control", label: "Kontrol skor", icon: Activity }]
       : []),
@@ -2004,6 +2006,15 @@ function CompetitionView({
                 <div
                   className="fixture-row"
                   key={m.id}
+                  onClick={(e) => {
+                    if (
+                      (e.target as HTMLElement).closest(
+                        "button, input, select, a",
+                      )
+                    )
+                      return;
+                    setSelected(m.id);
+                  }}
                   draggable={
                     admin &&
                     ["scheduled", "postponed"].includes(m.status) &&
@@ -2049,6 +2060,14 @@ function CompetitionView({
                   </div>
                   <div className="fixture-status">
                     <Badge status={m.status} />
+                    <button
+                      type="button"
+                      className="match-tap-hint"
+                      onClick={() => setSelected(m.id)}
+                    >
+                      {edit ? "Ketuk untuk catat gol" : "Lihat detail gol"}{" "}
+                      <ArrowRight size={13} />
+                    </button>
                     {m.scheduledAt && (
                       <small>
                         {date(m.scheduledAt)} · {time(m.scheduledAt)}
@@ -2114,6 +2133,10 @@ function CompetitionView({
             <Shield size={14} /> Hanya hasil final terkonfirmasi yang masuk
             klasemen resmi.
           </div>
+        </section>
+      ) : activeTab === "players" ? (
+        <section className="panel">
+          <PlayerLeaders c={c} />
         </section>
       ) : activeTab === "standings" ? (
         <section className="panel">
@@ -2270,20 +2293,46 @@ function CompetitionView({
         </button>
       </Modal>
       <Modal
-        open={!!selected && edit}
+        open={!!selected}
         onClose={() => setSelected(null)}
-        title="Match Control Center"
-        description="Hanya perubahan yang dikonfirmasi server dianggap tersimpan."
+        title={edit ? "Catat gol & kelola pertandingan" : "Detail pertandingan"}
+        description={
+          edit
+            ? "Catat pencetak gol dan assist. Skor otomatis mengikuti catatan gol."
+            : "Gol, assist, dan hasil pertandingan."
+        }
       >
-        {c.matches.find((m) => m.id === selected) && (
-          <MatchControl
-            key={selected}
-            c={c}
-            match={c.matches.find((m) => m.id === selected)!}
-            role={role!}
-            command={command}
-          />
-        )}
+        {c.matches.find((m) => m.id === selected) &&
+          (edit ? (
+            <MatchControl
+              key={selected}
+              c={c}
+              match={c.matches.find((m) => m.id === selected)!}
+              role={role!}
+              command={command}
+            />
+          ) : (
+            <>
+              <div className="spectator-match-score">
+                <h3>
+                  {team(c.matches.find((m) => m.id === selected)!.home)?.name}{" "}
+                  vs{" "}
+                  {team(c.matches.find((m) => m.id === selected)!.away)?.name}
+                </h3>
+                <strong>
+                  {c.matches.find((m) => m.id === selected)!.homeScore} –{" "}
+                  {c.matches.find((m) => m.id === selected)!.awayScore}
+                </strong>
+                <Badge
+                  status={c.matches.find((m) => m.id === selected)!.status}
+                />
+              </div>
+              <GoalTimeline
+                c={c}
+                match={c.matches.find((m) => m.id === selected)!}
+              />
+            </>
+          ))}
       </Modal>
       <Modal
         open={tieOpen}
@@ -2504,8 +2553,10 @@ function MatchControl({
       setAp(m.awayPenalty?.toString() || "");
       setSaved(true);
       setConfirm(false);
+      return true;
     } catch (e) {
       setError((e as Error).message);
+      return false;
     } finally {
       setBusy(false);
     }
@@ -2528,6 +2579,8 @@ function MatchControl({
   const stepper = (side: "home" | "away") => {
     const value = side === "home" ? home : away;
     const setter = side === "home" ? setHome : setAway;
+    if (match.goals !== undefined)
+      return <strong className="recorded-score">{value}</strong>;
     return (
       <div className="score-stepper">
         <button
@@ -2578,15 +2631,38 @@ function MatchControl({
         <div>
           <TeamMark team={team(match.home)} size={52} />
           <h3>{team(match.home)?.name || "Menunggu peserta"}</h3>
-          {stepper("home")}
+          <strong className="recorded-score">{home}</strong>
         </div>
         <span className="score-colon">:</span>
         <div>
           <TeamMark team={team(match.away)} size={52} />
           <h3>{team(match.away)?.name || "Menunggu peserta"}</h3>
-          {stepper("away")}
+          <strong className="recorded-score">{away}</strong>
         </div>
       </div>
+      <MatchGoals
+        c={c}
+        match={match}
+        busy={busy}
+        error={error}
+        disabled={
+          locked || stale || c.status === "draft" || !match.home || !match.away
+        }
+        send={send}
+      />
+      {match.goals === undefined && (
+        <details className="legacy-score-tools">
+          <summary>Skor lama / tanpa catatan pemain</summary>
+          <p>
+            Gunakan untuk melengkapi hasil lama yang belum memiliki nama pemain.
+            Untuk gol baru, gunakan tombol Gol di atas.
+          </p>
+          <div className="two-cols">
+            {stepper("home")}
+            {stepper("away")}
+          </div>
+        </details>
+      )}
       {stale && (
         <div className="alert error">
           Pertandingan telah diperbarui panitia lain.{" "}
@@ -2695,7 +2771,7 @@ function MatchControl({
                   <Radio size={17} /> Mulai LIVE
                 </button>
               )}
-              {match.status === "live" && (
+              {match.status === "live" && match.goals === undefined && (
                 <button
                   className="button primary full"
                   disabled={busy || stale}
@@ -3472,6 +3548,9 @@ function CompetitionSettings({
                       {(
                         {
                           score: "Skor live diperbarui",
+                          goal_add: "Gol dicatat",
+                          goal_update: "Catatan gol diperbarui",
+                          goal_delete: "Gol dihapus",
                           finalize: "Hasil final dikonfirmasi",
                           correct: "Hasil final dikoreksi",
                           publish: "Kompetisi dipublikasikan",

@@ -18,6 +18,18 @@ export type Team = {
   color: string;
   group: string | null;
 };
+export type Player = { id: string; teamId: string; name: string };
+export type Goal = {
+  id: string;
+  teamId: string;
+  creditedTeamId: string;
+  scorerId: string;
+  scorerName: string;
+  assistId: string | null;
+  assistName: string | null;
+  minute: number | null;
+  ownGoal: boolean;
+};
 export type Match = {
   id: string;
   home: string | null;
@@ -38,6 +50,8 @@ export type Match = {
   sourceOutcome?: "winner" | "loser";
   scheduledAt: string | null;
   version: number;
+  goals?: Goal[];
+  goalBaseline?: { home: number; away: number };
 };
 export type Audit = {
   id: string;
@@ -68,6 +82,7 @@ export type Competition = {
   version: number;
   createdAt: string;
   teams: Team[];
+  players?: Player[];
   matches: Match[];
   rules: {
     meetings: number;
@@ -518,6 +533,54 @@ export function canView(c: Competition, userId?: string) {
     !!roleFor(c, userId) || (c.status !== "draft" && c.visibility !== "private")
   );
 }
+export function normalizePlayerName(name: string) {
+  return name.normalize("NFKC").trim().replace(/\s+/g, " ");
+}
+export function playerNameKey(name: string) {
+  return normalizePlayerName(name).toLocaleLowerCase("id-ID");
+}
+function resolvePlayer(c: Competition, teamId: string, name: string): Player {
+  c.players ??= [];
+  const existing = c.players.find(
+    (p) => p.teamId === teamId && playerNameKey(p.name) === playerNameKey(name),
+  );
+  if (existing) return existing;
+  const player = { id: id(), teamId, name };
+  c.players.push(player);
+  return player;
+}
+export function recordedScore(match: Match) {
+  const baseline = match.goalBaseline ?? {
+    home: match.homeScore,
+    away: match.awayScore,
+  };
+  return {
+    home:
+      baseline.home +
+      (match.goals ?? []).filter((g) => g.creditedTeamId === match.home).length,
+    away:
+      baseline.away +
+      (match.goals ?? []).filter((g) => g.creditedTeamId === match.away).length,
+  };
+}
+export function playerStatistics(c: Competition) {
+  const rows = new Map<string, Player & { goals: number; assists: number }>();
+  const row = (playerId: string, teamId: string, name: string) => {
+    if (!rows.has(playerId))
+      rows.set(playerId, { id: playerId, teamId, name, goals: 0, assists: 0 });
+    return rows.get(playerId)!;
+  };
+  for (const m of c.matches.filter((match) => match.status === "final")) {
+    for (const g of m.goals ?? []) {
+      if (g.ownGoal) continue;
+      row(g.scorerId, g.teamId, g.scorerName).goals++;
+      if (g.assistId && g.assistName)
+        row(g.assistId, g.teamId, g.assistName).assists++;
+    }
+  }
+  return [...rows.values()];
+}
+
 export function applyCommand(
   original: Competition,
   user: { id: string; email: string },
@@ -543,7 +606,15 @@ export function applyCommand(
       409,
     );
   const type = String(command.type);
-  const scoring = ["score", "finalize", "correct", "match_status"];
+  const scoring = [
+    "score",
+    "finalize",
+    "correct",
+    "match_status",
+    "goal_add",
+    "goal_update",
+    "goal_delete",
+  ];
   if (!scoring.includes(type) && role === "score_operator")
     throw new DomainError(
       "Hanya owner atau admin yang dapat melakukan tindakan ini",
@@ -818,7 +889,123 @@ export function applyCommand(
       throw new DomainError("Publikasikan kompetisi sebelum mengisi skor");
     const m = findMatch();
     before = structuredClone(m);
-    if (type === "match_status") {
+    if (["goal_add", "goal_update", "goal_delete"].includes(type)) {
+      if (!m.home || !m.away) throw new DomainError("Peserta belum lengkap");
+      if (!["scheduled", "live", "final"].includes(m.status))
+        throw new DomainError("Gol tidak dapat diubah pada status ini");
+      const wasFinal = m.status === "final";
+      if (wasFinal) {
+        if (command.confirm !== true)
+          throw new DomainError("Koreksi gol final memerlukan konfirmasi");
+        reason = z
+          .string()
+          .trim()
+          .min(5, "Alasan koreksi minimal 5 karakter")
+          .max(500)
+          .parse(command.reason);
+      }
+      m.goals ??= [];
+      m.goalBaseline ??= { home: m.homeScore, away: m.awayScore };
+      if (type === "goal_delete") {
+        const index = m.goals.findIndex((goal) => goal.id === command.goalId);
+        if (index < 0)
+          throw new DomainError("Catatan gol tidak ditemukan", 404);
+        m.goals.splice(index, 1);
+      } else {
+        const input = z
+          .object({
+            teamId: z.string(),
+            scorerName: z
+              .string()
+              .transform(normalizePlayerName)
+              .pipe(z.string().min(1, "Isi nama pencetak gol").max(80)),
+            assistName: z
+              .string()
+              .transform(normalizePlayerName)
+              .pipe(z.string().max(80))
+              .default(""),
+            minute: z.number().int().min(0).max(999).nullable().default(null),
+            ownGoal: z.boolean().default(false),
+            existing: z.boolean().default(false),
+          })
+          .parse(command);
+        if (![m.home, m.away].includes(input.teamId))
+          throw new DomainError("Pemain harus berasal dari tim pertandingan");
+        if (input.ownGoal && input.assistName)
+          throw new DomainError("Gol bunuh diri tidak memiliki assist");
+        const scorer = resolvePlayer(c, input.teamId, input.scorerName);
+        const assist = input.assistName
+          ? resolvePlayer(c, input.teamId, input.assistName)
+          : null;
+        if (assist?.id === scorer.id)
+          throw new DomainError(
+            "Pencetak gol dan pemberi assist harus berbeda",
+          );
+        const creditedTeamId = input.ownGoal
+          ? input.teamId === m.home
+            ? m.away
+            : m.home
+          : input.teamId;
+        const goal: Goal = {
+          id: id(),
+          teamId: input.teamId,
+          creditedTeamId,
+          scorerId: scorer.id,
+          scorerName: scorer.name,
+          assistId: assist?.id ?? null,
+          assistName: assist?.name ?? null,
+          minute: input.minute,
+          ownGoal: input.ownGoal,
+        };
+        if (type === "goal_update") {
+          const index = m.goals.findIndex((g) => g.id === command.goalId);
+          if (index < 0)
+            throw new DomainError("Catatan gol tidak ditemukan", 404);
+          goal.id = m.goals[index].id;
+          m.goals[index] = goal;
+        } else {
+          if (input.existing) {
+            const side = creditedTeamId === m.home ? "home" : "away";
+            if (m.goalBaseline[side] <= 0)
+              throw new DomainError("Tidak ada gol lama untuk tim ini");
+            m.goalBaseline[side]--;
+          }
+          m.goals.push(goal);
+        }
+      }
+      const totals = recordedScore(m);
+      if (totals.home > 999 || totals.away > 999)
+        throw new DomainError("Skor maksimal 999");
+      if (wasFinal) {
+        // Reuse final-result validation and bracket propagation atomically.
+        const updated = applyCommand(c, user, {
+          type: "correct",
+          version: c.version,
+          matchId: m.id,
+          matchVersion: m.version,
+          homeScore: totals.home,
+          awayScore: totals.away,
+          homePenalty:
+            command.homePenalty === undefined
+              ? m.homePenalty
+              : command.homePenalty,
+          awayPenalty:
+            command.awayPenalty === undefined
+              ? m.awayPenalty
+              : command.awayPenalty,
+          confirm: true,
+          reason,
+        });
+        const audit = updated.audit.at(-1)!;
+        audit.event = type;
+        audit.before = before;
+        return updated;
+      }
+      m.homeScore = totals.home;
+      m.awayScore = totals.away;
+      m.status = "live";
+      c.status = "in_progress";
+    } else if (type === "match_status") {
       const status = z
         .enum(["live", "postponed", "cancelled", "scheduled"])
         .parse(command.status);
@@ -856,6 +1043,16 @@ export function applyCommand(
           awayPenalty: z.number().int().min(0).max(999).nullable().optional(),
         })
         .parse(command);
+      if (m.goals !== undefined) {
+        const totals = recordedScore(m);
+        if (
+          scores.homeScore !== totals.home ||
+          scores.awayScore !== totals.away
+        )
+          throw new DomainError(
+            "Ubah catatan gol untuk mengubah skor pertandingan ini",
+          );
+      }
       if (type === "score" && m.status !== "live")
         throw new DomainError("Mulai pertandingan live terlebih dahulu");
       if (type !== "score" && command.confirm !== true)
