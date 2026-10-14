@@ -149,7 +149,7 @@ describe("Fixture generation", () => {
   });
 });
 describe("Scoring and official standings", () => {
-  it("initial and live scores do not change official standings", () => {
+  it("live scores update provisional standings and final-only standings stay unchanged", () => {
     let c = publish();
     expect(standings(c).every((r) => !r.played && !r.points)).toBe(true);
     c = cmd(c, {
@@ -165,7 +165,12 @@ describe("Scoring and official standings", () => {
       homeScore: 8,
       awayScore: 3,
     });
-    expect(standings(c).every((r) => !r.played && !r.points)).toBe(true);
+    expect(
+      standings(c).find((r) => r.team.id === c.matches[0].home),
+    ).toMatchObject({ played: 1, points: 3, gf: 8, ga: 3, gd: 5 });
+    expect(
+      standings(c, undefined, false).every((r) => !r.played && !r.points),
+    ).toBe(true);
   });
   it("confirms final and recalculates after audited correction", () => {
     let c = finalize(publish());

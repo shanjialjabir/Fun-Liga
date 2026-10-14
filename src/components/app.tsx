@@ -565,7 +565,7 @@ function Home({
           {
             icon: ListOrdered,
             title: "Klasemen yang akurat",
-            text: "Dihitung dari hasil final, bukan perkiraan.",
+            text: "Skor live dan hasil final memperbarui posisi tim.",
           },
         ].map((f) => (
           <div key={f.title}>
@@ -1550,7 +1550,7 @@ function CreateCompetition({
             <Check size={16} /> Jadwal dibuat otomatis
           </div>
           <div>
-            <Check size={16} /> Hasil final dihitung ke klasemen
+            <Check size={16} /> Skor live dan hasil final dihitung ke klasemen
           </div>
           <div>
             <Check size={16} /> Publikasi setelah Anda siap
@@ -2211,8 +2211,8 @@ function CompetitionView({
             />
           )}
           <div className="panel-foot">
-            <Shield size={14} /> Hanya hasil final terkonfirmasi yang masuk
-            klasemen resmi.
+            <Shield size={14} /> Klasemen mengikuti skor live dan hasil final.
+            Posisi selama pertandingan berlangsung masih sementara.
           </div>
         </section>
       ) : activeTab === "players" ? (
@@ -2223,9 +2223,10 @@ function CompetitionView({
         <section className="panel">
           <div className="panel-heading">
             <div>
-              <h2>Klasemen resmi</h2>
+              <h2>Klasemen</h2>
               <p>
-                Dihitung dari hasil final. Skor live belum masuk perhitungan.
+                Skor live dan hasil final dihitung otomatis. Posisi selama
+                pertandingan berlangsung masih sementara.
               </p>
             </div>
             {admin && (
@@ -2596,6 +2597,16 @@ function Standings({
       {groups.slice(0, compact ? 1 : groups.length).map((g) => (
         <div key={g || "league"} className="standings-group">
           {g && <h3>Grup {g}</h3>}
+          {c.matches.some(
+            (m) =>
+              m.stage !== "knockout" &&
+              m.status === "live" &&
+              (!g || m.group === g),
+          ) && (
+            <p className="standings-live" role="status">
+              LIVE · Klasemen sementara
+            </p>
+          )}
           <div className="table-scroll">
             <table className="standings-table">
               <thead>
@@ -2633,6 +2644,12 @@ function Standings({
                         <TeamMark team={r.team} size={29} />
                         <span>
                           {r.team.name}
+                          {c.matches.some(
+                            (m) =>
+                              m.stage !== "knockout" &&
+                              m.status === "live" &&
+                              (m.home === r.team.id || m.away === r.team.id),
+                          ) && <small className="standings-live">LIVE</small>}
                           {r.tied && <small className="tie-label">Seri</small>}
                         </span>
                       </div>
@@ -3117,7 +3134,8 @@ function MatchControl({
         </div>
       )}
       <p className="control-footnote">
-        <Shield size={13} /> Skor live tidak mengubah klasemen resmi.
+        <Shield size={13} /> Perubahan skor live langsung memperbarui klasemen
+        sementara.
       </p>
     </div>
   );
@@ -4294,7 +4312,7 @@ function Help() {
         },
         {
           title: "03 — Catat permainan",
-          text: "Mulai LIVE untuk mencatat skor selama pertandingan, atau masukkan hasil final langsung. Konfirmasi final untuk menghitung klasemen. Koreksi hasil membutuhkan alasan dan dicatat dalam audit.",
+          text: "Mulai LIVE untuk mencatat skor selama pertandingan, atau masukkan hasil final langsung. Klasemen ikut berubah selama LIVE; konfirmasi final untuk mengesahkan hasil pertandingan. Koreksi hasil membutuhkan alasan dan dicatat dalam audit.",
         },
         {
           title: "04 — Bekerja bersama",

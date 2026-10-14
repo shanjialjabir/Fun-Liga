@@ -715,7 +715,7 @@ export function qualifiedTeams(c: Competition): Team[] {
     throw new DomainError("Selesaikan fase grup terlebih dahulu");
   const qualified: Team[] = [];
   for (let i = 0; i < c.rules.groups; i++) {
-    const rows = standings(c, String.fromCharCode(65 + i));
+    const rows = standings(c, String.fromCharCode(65 + i), false);
     if (rows.slice(0, c.rules.qualifiers).some((row) => row.tied))
       throw new DomainError(
         "Peringkat seri perlu keputusan panitia terlebih dahulu",
@@ -960,7 +960,11 @@ export type Standing = {
   tied: boolean;
   position: number;
 };
-export function standings(c: Competition, group?: string): Standing[] {
+export function standings(
+  c: Competition,
+  group?: string,
+  includeLive = true,
+): Standing[] {
   const teams = c.teams.filter((t) => !group || t.group === group);
   const rows = teams.map((team) => ({
     team,
@@ -975,13 +979,13 @@ export function standings(c: Competition, group?: string): Standing[] {
     tied: false,
     position: 0,
   }));
-  const finals = c.matches.filter(
+  const counted = c.matches.filter(
     (m) =>
-      m.status === "final" &&
+      (m.status === "final" || (includeLive && m.status === "live")) &&
       m.stage !== "knockout" &&
       (!group || m.group === group),
   );
-  for (const m of finals) {
+  for (const m of counted) {
     for (const row of rows) {
       if (row.team.id !== m.home && row.team.id !== m.away) continue;
       const home = row.team.id === m.home;
@@ -1013,7 +1017,7 @@ export function standings(c: Competition, group?: string): Standing[] {
     const set = rows.slice(start, end);
     const ids = new Set(set.map((r) => r.team.id));
     const mini = new Map(set.map((r) => [r.team.id, { p: 0, gd: 0, gf: 0 }]));
-    for (const m of finals.filter(
+    for (const m of counted.filter(
       (m) => ids.has(m.home!) && ids.has(m.away!),
     )) {
       for (const [tid, gf, ga] of [

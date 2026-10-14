@@ -95,7 +95,10 @@ describe("Goal ledger, player identity and statistics", () => {
     expect(c.audit.at(-1)?.event).toBe("goal_add");
     expect(original.players).toBeUndefined();
     expect(playerStatistics(c)).toEqual([]);
-    expect(standings(c).every((r) => r.points === 0)).toBe(true);
+    expect(standings(c).find((r) => r.team.id === m.home)?.points).toBe(3);
+    expect(standings(c, undefined, false).every((r) => r.points === 0)).toBe(
+      true,
+    );
   });
   it("uses the same per-team identities across roles, whitespace, casing and fixtures", () => {
     let c = goal(setup());
