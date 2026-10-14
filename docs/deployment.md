@@ -22,6 +22,9 @@ Production HTTPS/API checks verified:
 - Sanitized public responses and permitted realtime event signals; anonymous direct aggregate reads denied.
 - Archive behavior.
 - Owner-only permanent deletion of draft, published, and archived competitions, exact-name confirmation, stale-version rejection, and cascading removal of memberships, invitations, and realtime events. Deleted URLs return 404 and deleted invitations cannot be accepted. An independent competition remains intact. Verified using temporary production accounts and competitions; only those test resources were removed afterward.
+- Goal records with automatic scores, scorer/assist identities reused across casing and whitespace, own-goal attribution to opponents, goal edits/deletion, score-operator permissions, stale retry rejection, and confirmed/audited final corrections. Production reloads preserve goal records. Legacy goals can receive player attribution without increasing the existing score. All production checks used temporary private competitions/accounts, which were removed afterward.
+
+Goal records and the per-competition player registry are additive fields in the existing JSONB aggregate; existing scores are preserved. The Top skor & assist view derives statistics from final matches only, excluding own goals and penalty shootouts. Local validation passed 58 unit/database tests, five browser flows (including mobile goal entry, autocomplete, and spectator views), type checking, lint, and the production build.
 
 All temporary users, competition data, invitations and event rows used for testing were removed. No sample competition was published in discovery.
 
