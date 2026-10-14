@@ -6,7 +6,7 @@
 
 **https://fun-liga.vercel.app** — deployment produksi menggunakan Vercel dan Supabase.
 
-Lihat `docs/deployment.md` untuk hasil verifikasi dan konfigurasi. Login serta operasi kompetisi telah diuji pada server produksi. Pengiriman email verifikasi ke pendaftar umum masih memerlukan konfigurasi SMTP pada proyek Supabase; jangan menganggap pengiriman email sudah teruji.
+Lihat `docs/deployment.md` untuk hasil verifikasi dan konfigurasi. Login serta operasi kompetisi telah diuji pada server produksi. Pendaftaran mandiri Fun Liga ditutup: akun dibuat melalui Akun saya → Kelola akun oleh admin utama `sanjifile@gmail.com`. Pengiriman email reset kata sandi masih memerlukan layanan email yang sesuai; jangan menganggap pengiriman email sudah teruji.
 
 ## Coba demo tanpa instalasi
 
@@ -47,6 +47,8 @@ Demo menggunakan SQLite bawaan Node.js di `.data/demo.sqlite`. Data dan session 
 - Bracket maju otomatis; koreksi yang mengubah pemenang diblokir jika pertandingan turunannya sudah dimulai. Grup + gugur memerlukan persetujuan kualifikasi.
 - Undangan sekali pakai selama 72 jam, batasan email opsional, admin/operator per kompetisi, pencabutan undangan/akses, dan transfer owner dengan konfirmasi.
 - Version compare-and-swap untuk konflik pembaruan, audit sebelum/sesudah, penyelesaian dan arsip.
+- Akun hanya dibuat/diberi akses oleh admin utama. Server memerlukan email terverifikasi serta `app_metadata.fun_liga_access=true` untuk akun lain. Metadata yang dapat diedit pengguna tidak memberikan akses. Akun yang sudah menjadi pemilik/panitia sebelum pembatasan tetap diberi akses; pengaturan Auth aplikasi lain pada proyek Supabase bersama dipertahankan.
+- Jadwal grup bergiliran A, B, C, D dan mengulang; grup yang sudah habis dilewati. Tombol Seimbangkan giliran grup merapikan jadwal lama tanpa memindahkan pertandingan yang sudah berjalan/final. Slot waktu dipertahankan, identitas fixture dan hasil tidak dibuat ulang.
 - Pemilik dapat menghapus permanen kompetisi, termasuk draft, melalui Pengaturan → Hapus kompetisi. Konfirmasi harus memakai nama kompetisi persis. Tim, jadwal, hasil, riwayat, akses panitia, dan undangan terkait ikut terhapus; kompetisi lainnya tetap tersimpan.
 - Tampilan desktop/seluler, navigasi bawah, tombol skor 44 px, dialog dengan focus trap, menu seluler dengan keyboard/Escape, dan indikator koneksi.
 
@@ -70,7 +72,7 @@ Demo lokal dan API produksi Supabase telah diuji. Proyek produksi sudah dikonfig
 4. Google opsional: aktifkan Google provider, masukkan kredensial OAuth melalui Supabase Dashboard, dan tambahkan callback Supabase ke Google Console. Tombol Google hanya muncul jika flag di atas aktif.
 5. Migrasi memasukkan `competition_events` ke publikasi `supabase_realtime`. Periksa Realtime aktif pada tabel tersebut. Event hanya mengirim ID/version, bukan skor atau identitas panitia. RLS menentukan apakah subscriber boleh membaca event. Browser kemudian mengambil snapshot aman melalui API. Polling 5 detik tetap menjadi fallback/reconnect.
 6. Jalankan `pnpm build` dengan variabel publik sudah tersedia, lalu `pnpm start`. Pada Vercel, import repositori, pilih Next.js dan konfigurasi environment tersebut sebelum build. SQLite tidak dipakai saat `DEMO_MODE=false`.
-7. Verifikasi signup, login/logout, verifikasi email, reset password, dua akun dengan peran berbeda, kompetisi privat, konflik pembaruan, dan realtime setelah deployment. Jangan menganggap hasil pengujian demo memverifikasi layanan eksternal ini.
+7. Siapkan akun admin utama lewat Supabase Auth Admin. Verifikasi pembuatan akun melalui admin, penolakan akun tanpa akses, login/logout, reset password, dua akun dengan peran berbeda, kompetisi privat, konflik pembaruan, dan realtime setelah deployment. Jangan menganggap hasil pengujian demo memverifikasi layanan eksternal ini.
 
 Kunci service role diimpor oleh modul `server-only`, tidak dikirim ke browser. API memverifikasi JWT lewat Supabase `auth.getUser()` sebelum mengotorisasi perubahan. RLS menolak mutation langsung dari anon/authenticated; RPC mutation hanya dapat dieksekusi service role setelah pemeriksaan server. Payload publik menghapus anggota, audit, dan owner ID. Semua penyimpanan aggregate/version/audit dan membership dilakukan dalam satu transaksi.
 

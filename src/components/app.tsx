@@ -43,6 +43,7 @@ import {
 } from "lucide-react";
 import { api, authClient, ApiError } from "@/lib/client";
 import { ACCENT_COLOR } from "@/lib/palette";
+import { isMainAdmin } from "@/lib/access";
 import {
   competitionInput,
   formats,
@@ -936,24 +937,20 @@ function AuthDialog({
           if (error) throw error;
           await done();
         } else if (mode === "signup") {
-          const { data, error } = await authClient.auth.signUp({
-            email: v.email,
-            password: v.password,
-            options: {
-              data: { display_name: v.name },
-              emailRedirectTo: window.location.origin,
-            },
-          });
-          if (error) throw error;
-          if (data.session) await done();
-          else
-            setMessage("Periksa email Anda untuk verifikasi akun, lalu masuk.");
+          throw new Error("Akun hanya dapat dibuat oleh admin utama.");
         } else {
           const { error } = await authClient.auth.signInWithPassword({
             email: v.email,
             password: v.password,
           });
           if (error) throw error;
+          const access = await api<{ user: User | null }>("session");
+          if (!access.user) {
+            await authClient.auth.signOut();
+            throw new Error(
+              "Akun belum diberi akses Fun Liga. Hubungi admin utama.",
+            );
+          }
           await done();
         }
       }
@@ -1076,10 +1073,12 @@ function AuthDialog({
             <button type="button" onClick={() => setMode("reset")}>
               Lupa kata sandi?
             </button>
-            <button type="button" onClick={() => setMode("signup")}>
-              Buat akun baru
-            </button>
           </div>
+        )}
+        {!demo && mode === "login" && (
+          <p className="muted">
+            Akun dibuat oleh admin utama. Pendaftaran mandiri tidak tersedia.
+          </p>
         )}
         {!demo && mode !== "login" && (
           <button
@@ -1945,13 +1944,27 @@ function CompetitionView({
             </div>
             <div className="section-inline" style={{ gap: 12 }}>
               <span className="muted">{c.matches.length} pertandingan</span>
+              {admin && c.format.includes("group") && (
+                <button
+                  className="button secondary small"
+                  disabled={
+                    busy ||
+                    ["archived", "completed", "cancelled"].includes(c.status)
+                  }
+                  onClick={() => void run({ type: "group_balance" })}
+                >
+                  Seimbangkan giliran grup
+                </button>
+              )}
               {admin && (
                 <button
                   className="button secondary small"
                   disabled={busy}
                   onClick={() =>
                     void run({
-                      type: "reorder",
+                      type: c.format.includes("group")
+                        ? "group_balance"
+                        : "reorder",
                       ids: prioritizeRest(c.matches).map((m) => m.id),
                     })
                   }
@@ -3555,6 +3568,7 @@ function CompetitionSettings({
                           correct: "Hasil final dikoreksi",
                           publish: "Kompetisi dipublikasikan",
                           reorder: "Jadwal diurutkan",
+                          group_balance: "Giliran grup diseimbangkan",
                           settings: "Pengaturan diubah",
                           rules: "Aturan dan jadwal diperbarui",
                           transfer: "Kepemilikan dipindahkan",
@@ -3740,12 +3754,133 @@ function Account({
             {message && <p role="status">{message}</p>}
           </div>
         )}
+        {isMainAdmin(user.email) && <ManagedAccounts />}
         <hr />
         <button className="button secondary" onClick={() => void logout()}>
           <LogOut size={17} /> Keluar dari akun
         </button>
       </section>
     </div>
+  );
+}
+function ManagedAccounts() {
+  const [accounts, setAccounts] = useState<User[]>([]);
+  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const load = useCallback(async () => {
+    try {
+      setAccounts(await api<User[]>("admin/accounts"));
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }, []);
+  useEffect(() => {
+    void Promise.resolve().then(load);
+  }, [load]);
+  return (
+    <section className="managed-accounts form-stack">
+      <hr />
+      <h2>Kelola akun</h2>
+      <p>
+        Hanya admin utama yang dapat membuat akun atau memberi akses Fun Liga.
+        Tidak ada pendaftaran mandiri.
+      </p>
+      <form
+        className="form-stack"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          if (busy) return;
+          setBusy(true);
+          setError("");
+          setMessage("");
+          try {
+            const result = await api<{ created: boolean }>("admin/accounts", {
+              method: "POST",
+              body: JSON.stringify({ email, name, password }),
+            });
+            setPassword("");
+            setEmail("");
+            setName("");
+            setMessage(
+              result.created
+                ? "Akun dibuat. Pengguna dapat masuk dengan email dan kata sandi awal yang Anda tetapkan."
+                : "Akses akun yang sudah ada diaktifkan. Kata sandi lamanya tetap berlaku; kata sandi awal di formulir ini tidak menggantikannya.",
+            );
+            await load();
+          } catch (e) {
+            setPassword("");
+            setError((e as Error).message);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <label>
+          Nama pengguna
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            maxLength={80}
+            required
+            disabled={busy}
+          />
+        </label>
+        <label>
+          Email akun
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            autoComplete="off"
+            maxLength={200}
+            required
+            disabled={busy}
+          />
+        </label>
+        <label>
+          Kata sandi awal
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="new-password"
+            minLength={8}
+            maxLength={128}
+            required
+            disabled={busy}
+          />
+        </label>
+        <small>
+          Minimal 8 karakter. Jika email sudah memiliki akun, hanya akses Fun
+          Liga yang ditambahkan; kata sandi dan verifikasi lama tetap berlaku.
+        </small>
+        <button className="button primary full" disabled={busy}>
+          {busy ? "Menyimpan…" : "Buat akun / beri akses"}
+        </button>
+      </form>
+      {message && <p role="status">{message}</p>}
+      {error && (
+        <div className="alert error" role="alert">
+          {error}
+        </div>
+      )}
+      <h3>Akun dengan akses Fun Liga</h3>
+      <div className="managed-account-list">
+        {accounts.map((account) => (
+          <div key={account.id}>
+            <b>{account.name}</b>
+            <small>{account.email}</small>
+            {isMainAdmin(account.email) && (
+              <span className="badge">Admin utama</span>
+            )}
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 function InviteAccept({

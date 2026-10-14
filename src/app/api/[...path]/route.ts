@@ -22,7 +22,10 @@ import {
   acceptInvite,
   listInvites,
   revokeInvite,
+  listManagedAccounts,
+  createManagedAccount,
 } from "@/lib/store";
+import { isMainAdmin } from "@/lib/access";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 function safe(c: Competition, userId?: string) {
@@ -49,6 +52,32 @@ async function handle(
     }
     if (path[0] === "session" && method === "GET")
       return NextResponse.json({ user, demo: demoMode });
+    if (path[0] === "admin" && path[1] === "accounts" && path.length === 2) {
+      if (!user) throw new DomainError("Silakan masuk terlebih dahulu", 401);
+      if (!isMainAdmin(user.email))
+        throw new DomainError("Hanya admin utama dapat mengelola akun", 403);
+      if (method === "GET")
+        return NextResponse.json(await listManagedAccounts());
+      if (method === "POST") {
+        const input = z
+          .object({
+            email: z
+              .email()
+              .max(200)
+              .transform((value) => value.toLowerCase()),
+            name: z.string().trim().min(1).max(80),
+            password: z
+              .string()
+              .min(8, "Kata sandi minimal 8 karakter")
+              .max(128),
+          })
+          .parse(await request.json());
+        return NextResponse.json(
+          await createManagedAccount(input.email, input.name, input.password),
+          { status: 201 },
+        );
+      }
+    }
     if (path[0] === "demo-login" && method === "POST") {
       if (!demoMode) throw new DomainError("Mode demo dinonaktifkan", 403);
       const input = z

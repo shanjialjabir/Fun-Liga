@@ -226,6 +226,53 @@ export function roundRobin(
     .flat()
     .map((m, order) => ({ ...m, order }));
 }
+export function interleaveGroups(
+  matches: Match[],
+  afterGroup?: string | null,
+): Match[] {
+  let groups = [...new Set(matches.map((m) => m.group))].sort();
+  const previous = groups.indexOf(afterGroup ?? null);
+  if (previous >= 0)
+    groups = [...groups.slice(previous + 1), ...groups.slice(0, previous + 1)];
+  const queues = groups.map((group) =>
+    matches.filter((m) => m.group === group),
+  );
+  const result: Match[] = [];
+  const count = Math.max(0, ...queues.map((queue) => queue.length));
+  for (let index = 0; index < count; index++)
+    for (const queue of queues) if (queue[index]) result.push(queue[index]);
+  return result.map((match, order) => ({ ...match, order }));
+}
+export function balanceGroupSchedule(matches: Match[]): Match[] {
+  const result: Match[] = [];
+  let pending: Match[] = [];
+  const flush = () => {
+    const ordered = interleaveGroups(pending, result.at(-1)?.group);
+    for (let index = 0; index < ordered.length; index++) {
+      const match = ordered[index];
+      const scheduledAt = pending[index].scheduledAt;
+      result.push({
+        ...match,
+        scheduledAt,
+        version: match.version + (scheduledAt !== match.scheduledAt ? 1 : 0),
+      });
+    }
+    pending = [];
+  };
+  for (const match of matches) {
+    if (
+      match.stage === "group" &&
+      ["scheduled", "postponed"].includes(match.status)
+    )
+      pending.push(match);
+    else {
+      flush();
+      result.push(match);
+    }
+  }
+  flush();
+  return result.map((match, order) => ({ ...match, order }));
+}
 export function knockout(teams: Team[], thirdPlace = false): Match[] {
   let size = 2;
   while (size < teams.length) size *= 2;
@@ -314,7 +361,10 @@ export function createCompetition(
             ),
           )
         : roundRobin(teams, v.meetings);
-  matches = matches.map((m, order) => ({ ...m, order }));
+  matches = (grouped ? interleaveGroups(matches) : matches).map((m, order) => ({
+    ...m,
+    order,
+  }));
   return {
     id: cid,
     slug: `${
@@ -368,9 +418,13 @@ export function generateFixtures(
             ),
           )
         : roundRobin(c.teams, c.rules.meetings);
-  return generated.map((m, order) => ({ ...m, order }));
+  return (
+    c.format.includes("group") ? interleaveGroups(generated) : generated
+  ).map((m, order) => ({ ...m, order }));
 }
 export function prioritizeRest(matches: Match[]): Match[] {
+  if (matches.some((match) => match.stage === "group"))
+    return balanceGroupSchedule(matches);
   const remaining = [...matches],
     out: Match[] = [];
   while (remaining.length) {
@@ -656,6 +710,14 @@ export function applyCommand(
     )
       throw new DomainError("Masih ada pertandingan yang belum selesai");
     c.status = status;
+  } else if (type === "group_balance") {
+    if (!c.format.includes("group"))
+      throw new DomainError("Kompetisi ini tidak memakai grup");
+    if (["archived", "completed", "cancelled"].includes(c.status))
+      throw new DomainError("Kompetisi sudah ditutup");
+    before = structuredClone(c.matches);
+    c.matches = balanceGroupSchedule(c.matches);
+    after = structuredClone(c.matches);
   } else if (type === "reorder") {
     const ids = z.array(z.string()).parse(command.ids);
     if (

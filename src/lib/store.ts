@@ -6,6 +6,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import type { Competition } from "./competition";
 import { DomainError } from "./competition";
+import { isMainAdmin, hasAppAccess } from "./access";
 
 export const demoMode =
   process.env.DEMO_MODE === "true" ||
@@ -58,6 +59,7 @@ export async function currentUser(request: Request): Promise<User | null> {
   if (!authorization?.startsWith("Bearer ")) return null;
   const { data, error } = await supabase().auth.getUser(authorization.slice(7));
   if (error || !data.user) return null;
+  if (!hasAppAccess(data.user)) return null;
   return {
     id: data.user.id,
     email: data.user.email || "",
@@ -358,4 +360,86 @@ export async function revokeInvite(cid: string, tokenHash: string) {
       .eq("token_hash", tokenHash);
     if (error) throw new DomainError("Gagal mencabut undangan", 503);
   }
+}
+
+export async function listManagedAccounts() {
+  if (demoMode)
+    return db()
+      .prepare("SELECT id,email,name FROM users ORDER BY name")
+      .all() as User[];
+  const client = supabase();
+  const accounts: User[] = [];
+  for (let page = 1; ; page++) {
+    const { data, error } = await client.auth.admin.listUsers({
+      page,
+      perPage: 200,
+    });
+    if (error) throw new DomainError("Gagal membaca akun", 503);
+    for (const user of data.users) {
+      if (isMainAdmin(user.email) || user.app_metadata.fun_liga_access === true)
+        accounts.push({
+          id: user.id,
+          email: user.email || "",
+          name:
+            user.user_metadata.display_name ||
+            user.email?.split("@")[0] ||
+            "Panitia",
+        });
+    }
+    if (data.users.length < 200) break;
+  }
+  return accounts;
+}
+export async function createManagedAccount(
+  email: string,
+  name: string,
+  password: string,
+) {
+  if (demoMode) {
+    const existing = db()
+      .prepare("SELECT * FROM users WHERE email=?")
+      .get(email) as User | undefined;
+    if (existing) return { user: existing, created: false };
+    const user = { id: crypto.randomUUID(), email, name };
+    db().prepare("INSERT INTO users VALUES(?,?,?)").run(user.id, email, name);
+    return { user, created: true };
+  }
+  const client = supabase();
+  // Preserve credentials and verification belonging to the shared Auth project.
+  for (let page = 1; ; page++) {
+    const { data, error } = await client.auth.admin.listUsers({
+      page,
+      perPage: 200,
+    });
+    if (error) throw new DomainError("Gagal memeriksa akun", 503);
+    const existing = data.users.find((u) => u.email?.toLowerCase() === email);
+    if (existing) {
+      const result = await client.auth.admin.updateUserById(existing.id, {
+        app_metadata: { ...existing.app_metadata, fun_liga_access: true },
+      });
+      if (result.error) throw new DomainError("Gagal memberi akses akun", 503);
+      return {
+        user: {
+          id: existing.id,
+          email,
+          name: existing.user_metadata.display_name || name,
+        },
+        created: false,
+      };
+    }
+    if (data.users.length < 200) break;
+  }
+  const { data, error } = await client.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+    user_metadata: { display_name: name },
+    app_metadata: { fun_liga_access: true },
+  });
+  if (error || !data.user)
+    throw new DomainError(
+      "Gagal membuat akun. Periksa email dan kata sandi.",
+      400,
+    );
+  return { user: { id: data.user.id, email, name }, created: true };
 }

@@ -4337,3 +4337,268 @@ small {
   z-index: 3;
   box-shadow: 0 -8px 20px #0006;
 }
+
+/* Mobile controls: iOS does not auto-zoom inputs at 16px or above.
+   Browser pinch zoom remains enabled for accessibility. */
+.managed-account-list {
+  display: grid;
+  gap: 10px;
+}
+.managed-account-list > div {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  overflow-wrap: anywhere;
+}
+.managed-account-list small {
+  color: var(--muted);
+}
+@media (max-width: 760px) {
+  .page {
+    font-size: 14px;
+    padding-bottom: calc(100px + env(safe-area-inset-bottom));
+  }
+  input,
+  select,
+  textarea,
+  .form-stack input,
+  .form-stack select,
+  .form-stack textarea,
+  .advanced input,
+  .advanced select,
+  .advanced textarea,
+  .filter-bar select,
+  .match-filters select,
+  .score-stepper input {
+    font-size: 16px !important;
+    min-width: 0;
+    scroll-margin-block: 90px;
+  }
+  input:not([type="checkbox"]),
+  select,
+  textarea {
+    min-height: 48px;
+  }
+  .form-stack label,
+  .advanced label,
+  .player-autocomplete label {
+    font-size: 14px;
+    line-height: 1.45;
+  }
+  .form-stack small,
+  .player-autocomplete small,
+  .goal-note {
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .form-stack {
+    gap: 16px;
+  }
+  .two-cols,
+  .three-cols {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+  .two-cols > *,
+  .three-cols > *,
+  .fixture-teams > span,
+  .overview-grid > * {
+    min-width: 0;
+  }
+  .button {
+    min-height: 48px;
+    font-size: 13px;
+  }
+  .wizard-actions .button {
+    font-size: 13px;
+  }
+  .wizard-steps {
+    flex-wrap: wrap;
+    row-gap: 10px;
+  }
+  .wizard-steps > div {
+    font-size: 11px;
+  }
+  .modal-content {
+    width: calc(100% - 24px);
+    max-width: 540px;
+    max-height: calc(100dvh - 24px - env(safe-area-inset-bottom));
+    padding: 20px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scroll-padding-block: 16px;
+  }
+  .modal-heading {
+    gap: 10px;
+    align-items: flex-start;
+  }
+  .modal-heading > div {
+    min-width: 0;
+  }
+  .modal-heading h2 {
+    font-size: 20px;
+    line-height: 1.35;
+  }
+  .modal-heading p {
+    font-size: 12px;
+  }
+  .goal-entry.form-stack {
+    gap: 14px;
+  }
+  .goal-entry {
+    padding: 14px;
+  }
+  .player-suggestions {
+    top: 80px;
+  }
+  .goal-team-actions {
+    grid-template-columns: 1fr 1fr;
+  }
+  .goal-kind button {
+    font-size: 13px;
+    min-height: 48px;
+  }
+  .goal-save {
+    bottom: 0;
+  }
+  .fixture-row {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr);
+    gap: 12px 8px;
+    padding: 16px;
+    align-items: center;
+  }
+  .fixture-index {
+    width: auto;
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .fixture-index small {
+    font-size: 10px;
+  }
+  .fixture-teams {
+    grid-column: 2;
+    grid-row: 1;
+    width: 100%;
+    grid-template-columns: minmax(0, 1fr) 56px minmax(0, 1fr);
+    gap: 8px;
+  }
+  .fixture-teams > span {
+    font-size: 12px;
+    overflow-wrap: anywhere;
+  }
+  .fixture-teams > span.fixture-score {
+    font-size: 15px;
+  }
+  .fixture-status {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: auto;
+    margin: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+  .fixture-status .badge,
+  .fixture-status > small {
+    font-size: 11px;
+  }
+  .match-tap-hint {
+    font-size: 12px;
+    min-height: 36px;
+  }
+  .fixture-actions {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    margin: 0;
+    justify-content: flex-end;
+  }
+  .fixture-actions:empty {
+    display: none;
+  }
+  .bottom-nav {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .competition-tabs a {
+    font-size: 12px;
+    min-height: 44px;
+  }
+  .panel-heading h2 {
+    font-size: 18px;
+  }
+  .panel-heading p {
+    font-size: 12px;
+  }
+  .control-teams {
+    grid-template-columns: minmax(0, 1fr) 18px minmax(0, 1fr);
+  }
+  .control-teams > div {
+    min-width: 0;
+  }
+  .control-teams h3 {
+    overflow-wrap: anywhere;
+    font-size: 13px;
+  }
+  .legacy-score-tools .two-cols,
+  .confirm-final .two-cols {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+@media (max-width: 760px) {
+  .panel-heading {
+    flex-wrap: wrap;
+    gap: 14px;
+  }
+  .panel-heading > div {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .panel-heading .section-inline {
+    flex-wrap: wrap;
+    gap: 8px !important;
+  }
+  .panel-heading .button {
+    max-width: 100%;
+    white-space: normal;
+  }
+  .filter-bar {
+    flex-wrap: wrap;
+  }
+}
+@media (max-width: 1024px), (hover: none) and (pointer: coarse) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+@media (max-width: 760px) {
+  .button.small,
+  .panel-heading .button.small {
+    font-size: 13px;
+    min-height: 48px;
+  }
+  .filter-pills > button {
+    font-size: 12px;
+  }
+  .badge {
+    font-size: 11px !important;
+  }
+  .bottom-nav > a,
+  .bottom-nav > button {
+    font-size: 11px;
+    min-height: 64px;
+  }
+  .panel-heading .section-inline {
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+  .panel-heading .section-inline .button {
+    width: 100%;
+  }
+}

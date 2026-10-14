@@ -8,6 +8,7 @@ import {
   type Competition,
 } from "../src/lib/competition";
 import { z } from "zod";
+import { isMainAdmin } from "../src/lib/access";
 export const authClient: SupabaseClient | null = null;
 export class ApiError extends Error {
   constructor(
@@ -79,7 +80,33 @@ export async function api<T>(
     const method = options.method || "GET";
     const body = options.body ? JSON.parse(String(options.body)) : {};
     let result: unknown;
-    if (route === "session") {
+    if (route === "admin/accounts") {
+      if (!user) throw new ApiError("Silakan masuk terlebih dahulu", 401);
+      if (!isMainAdmin(user.email))
+        throw new ApiError("Hanya admin utama dapat mengelola akun", 403);
+      if (method === "GET") result = state.users;
+      else if (method === "POST") {
+        const input = z
+          .object({
+            email: z.email().transform((value) => value.toLowerCase()),
+            name: z.string().trim().min(1).max(80),
+            password: z.string().min(8).max(128),
+          })
+          .parse(body);
+        let account = state.users.find((u) => u.email === input.email);
+        const created = !account;
+        if (!account) {
+          account = {
+            id: crypto.randomUUID(),
+            email: input.email,
+            name: input.name,
+          };
+          state.users.push(account);
+          save(state);
+        }
+        result = { user: account, created };
+      } else throw new ApiError("Endpoint tidak ditemukan", 404);
+    } else if (route === "session") {
       result = { user: user || null, demo: true };
     } else if (route === "demo-login") {
       const v = z
