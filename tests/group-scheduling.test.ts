@@ -58,7 +58,7 @@ describe("Fair group scheduling", () => {
       "A",
       "B",
       "C",
-      "D",
+      "A",
     ]);
     expect(c.matches.filter((m) => m.group === "D")).toHaveLength(2);
     expect(c.matches).toHaveLength(20);

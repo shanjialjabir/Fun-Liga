@@ -86,6 +86,7 @@ export type Competition = {
   matches: Match[];
   rules: {
     meetings: number;
+    mirrorMeetings?: boolean;
     win: number;
     draw: number;
     loss: number;
@@ -238,23 +239,23 @@ export function interleaveGroups(
     matches.filter((m) => m.group === group),
   );
   const result: Match[] = [];
-  const rounds = [...new Set(matches.map((match) => match.round))].sort(
+  const meetings = [...new Set(matches.map((m) => m.meeting))].sort(
     (a, b) => a - b,
   );
-  for (const round of rounds) {
-    const sourceQueues =
-      round === rounds[0]
-        ? queues
-        : [...queues].sort((a, b) =>
-            (a[0]?.group ?? "").localeCompare(b[0]?.group ?? ""),
-          );
-    const roundQueues = sourceQueues.map((queue) =>
-      queue.filter((match) => match.round === round),
-    );
-    const count = Math.max(0, ...roundQueues.map((queue) => queue.length));
-    for (let index = 0; index < count; index++)
-      for (const queue of roundQueues)
-        if (queue[index]) result.push(queue[index]);
+  for (const meeting of meetings) {
+    const weekQueues = queues.map((queue) => {
+      const leg = queue.filter((m) => m.meeting === meeting);
+      return [...new Set(leg.map((m) => m.round))]
+        .sort((a, b) => a - b)
+        .map((round) => leg.filter((m) => m.round === round));
+    });
+    const weeks = Math.max(0, ...weekQueues.map((q) => q.length));
+    for (let week = 0; week < weeks; week++) {
+      const dayQueues = weekQueues.map((q) => q[week] ?? []);
+      const count = Math.max(0, ...dayQueues.map((q) => q.length));
+      for (let index = 0; index < count; index++)
+        for (const q of dayQueues) if (q[index]) result.push(q[index]);
+    }
   }
   return result.map((match, order) => ({ ...match, order }));
 }
@@ -368,16 +369,218 @@ export function shuffleSchedule(
   }
   return result;
 }
-export function canShuffleSchedule(matches: Match[]) {
+export function seasonRoundsAreOrdered(matches: Match[]) {
+  return matches.every(
+    (match, index) =>
+      index === 0 ||
+      match.stage !== matches[index - 1].stage ||
+      (match.stage === "knockout"
+        ? match.round >= matches[index - 1].round
+        : match.meeting >= matches[index - 1].meeting),
+  );
+}
+function seasonBaseSchedule(matches: Match[]) {
+  if (seasonRoundsAreOrdered(matches)) return matches.map((m) => ({ ...m }));
+  const out: Match[] = [];
+  let pending: Match[] = [];
+  const flush = () => {
+    const ordered =
+      pending[0]?.stage === "group"
+        ? interleaveGroups(pending)
+        : [...pending].sort(
+            (a, b) => a.meeting - b.meeting || a.round - b.round,
+          );
+    ordered.forEach((m, i) =>
+      out.push({ ...m, scheduledAt: pending[i].scheduledAt }),
+    );
+    pending = [];
+  };
+  for (const m of matches) {
+    if (!["scheduled", "postponed"].includes(m.status)) {
+      flush();
+      out.push(m);
+    } else {
+      if (pending.length && pending[0].stage !== m.stage) flush();
+      pending.push(m);
+    }
+  }
+  flush();
+  return out.map((m, order) => ({ ...m, order }));
+}
+function poolKey(match: Match) {
+  return `${match.stage}:${match.group ?? ""}`;
+}
+function pairKey(match: Match) {
+  return [match.home, match.away].sort().join(":");
+}
+export function mirroredMeetings(matches: Match[]) {
+  const pools = [
+    ...new Set(matches.filter((m) => m.stage !== "knockout").map(poolKey)),
+  ];
+  return pools.every((pool) => {
+    const fixtures = matches.filter((m) => poolKey(m) === pool);
+    const meetings = [...new Set(fixtures.map((m) => m.meeting))].sort(
+      (a, b) => a - b,
+    );
+    const reference = fixtures.filter((m) => m.meeting === meetings[0]);
+    return meetings.every((meeting) => {
+      const leg = fixtures.filter((m) => m.meeting === meeting);
+      return (
+        leg.length === reference.length &&
+        leg.every(
+          (m, i) =>
+            pairKey(m) === pairKey(reference[i]) &&
+            ((meeting - meetings[0]) % 2
+              ? m.home === reference[i].away && m.away === reference[i].home
+              : m.home === reference[i].home && m.away === reference[i].away),
+        )
+      );
+    });
+  });
+}
+export function validMatchWeeks(matches: Match[]) {
+  const pools = [
+    ...new Set(
+      matches
+        .filter((m) => m.stage !== "knockout")
+        .map((m) => `${poolKey(m)}:${m.meeting}`),
+    ),
+  ];
+  return pools.every((pool) => {
+    const fixtures = matches.filter(
+      (m) => `${poolKey(m)}:${m.meeting}` === pool,
+    );
+    const completed = new Set<number>();
+    let current: number | undefined;
+    for (const m of fixtures) {
+      if (m.round !== current) {
+        if (completed.has(m.round)) return false;
+        if (current !== undefined) completed.add(current);
+        current = m.round;
+      }
+    }
+    return true;
+  });
+}
+export function shuffleSeasonSchedule(
+  matches: Match[],
+  mirror = true,
+  draw: (max: number) => number = randomIndex,
+): Match[] {
+  const base = seasonBaseSchedule(matches);
+  // Knockout brackets retain their original round and advancement roles.
+  const result = base.map((match) => ({ ...match }));
+  const knockoutSlots = base.flatMap((match, index) =>
+    match.stage === "knockout" ? [index] : [],
+  );
+  const drawnKnockout = shuffleSchedule(
+    knockoutSlots.map((index) => base[index]),
+    draw,
+  );
+  knockoutSlots.forEach((slot, index) => {
+    result[slot] = {
+      ...drawnKnockout[index],
+      order: slot,
+      scheduledAt: matches[slot].scheduledAt,
+    };
+  });
+  const shuffle = <T>(items: T[]) => {
+    const out = [...items];
+    for (let i = out.length - 1; i > 0; i--) {
+      const j = draw(i + 1);
+      [out[i], out[j]] = [out[j], out[i]];
+    }
+    return out;
+  };
+  const pools = [
+    ...new Set(base.filter((m) => m.stage !== "knockout").map(poolKey)),
+  ];
+  for (const pool of pools) {
+    const meetings = [
+      ...new Set(base.filter((m) => poolKey(m) === pool).map((m) => m.meeting)),
+    ].sort((a, b) => a - b);
+    let reference: Match[] = [];
+    for (const meeting of meetings) {
+      const slots = base.flatMap((m, i) =>
+        poolKey(m) === pool && m.meeting === meeting ? [i] : [],
+      );
+      const leg = slots.map((i) => base[i]);
+      const movable = leg.every((m) =>
+        ["scheduled", "postponed"].includes(m.status),
+      );
+      let plan = leg;
+      if (mirror && reference.length && movable) {
+        const byPair = new Map(leg.map((m) => [pairKey(m), m]));
+        if (
+          reference.length === leg.length &&
+          reference.every((m) => byPair.has(pairKey(m)))
+        )
+          plan = reference.map((m) => byPair.get(pairKey(m))!);
+      } else if (movable) {
+        const weeks = [...new Set(leg.map((m) => m.round))].map((round) =>
+          leg.filter((m) => m.round === round),
+        );
+        plan = shuffle(weeks).flatMap((week) => shuffle(week));
+      }
+      if (!reference.length) reference = plan;
+      slots.forEach((slot, index) => {
+        result[slot] = {
+          ...plan[index],
+          order: slot,
+          scheduledAt: matches[slot].scheduledAt,
+        };
+      });
+    }
+  }
+  return result;
+}
+export function validSeasonDrawing(
+  original: Match[],
+  proposal: Match[],
+  mirror: boolean,
+) {
+  if (!seasonRoundsAreOrdered(proposal) || !validMatchWeeks(proposal))
+    return false;
   if (
-    roundOrderedSchedule(matches).some(
+    original.some(
+      (m, index) =>
+        !["scheduled", "postponed"].includes(m.status) &&
+        proposal[index]?.id !== m.id,
+    )
+  )
+    return false;
+  return !mirror || mirroredMeetings(proposal);
+}
+export function seasonLabel(match: Match) {
+  return match.stage === "knockout"
+    ? `Babak ${match.round}`
+    : `Putaran ${match.meeting}`;
+}
+export function canShuffleSchedule(matches: Match[]) {
+  for (const match of matches.filter((m) => m.stage !== "knockout")) {
+    const leg = matches.filter(
+      (m) => poolKey(m) === poolKey(match) && m.meeting === match.meeting,
+    );
+    if (
+      leg.length > 1 &&
+      leg.every((m) => ["scheduled", "postponed"].includes(m.status))
+    )
+      return true;
+  }
+
+  if (
+    seasonBaseSchedule(matches).some(
       (match, index) => match.id !== matches[index].id,
     )
   )
     return true;
   const counts = new Map<string, number>();
   for (const match of matches) {
-    if (!["scheduled", "postponed"].includes(match.status)) continue;
+    if (
+      match.stage !== "knockout" ||
+      !["scheduled", "postponed"].includes(match.status)
+    )
+      continue;
     const key = scheduleBucket(match);
     const count = (counts.get(key) ?? 0) + 1;
     if (count > 1) return true;
@@ -499,6 +702,7 @@ export function createCompetition(
     matches,
     rules: {
       meetings: v.meetings,
+      mirrorMeetings: true,
       win: v.win,
       draw: v.draw,
       loss: v.loss,
@@ -832,12 +1036,16 @@ export function applyCommand(
     after = structuredClone(c.matches);
   } else if (type === "reorder" || type === "shuffle_schedule") {
     const expectedSlots =
-      type === "shuffle_schedule" ? roundOrderedSchedule(c.matches) : c.matches;
+      type === "shuffle_schedule" ? seasonBaseSchedule(c.matches) : c.matches;
     if (
       type === "shuffle_schedule" &&
       ["archived", "completed", "cancelled"].includes(c.status)
     )
       throw new DomainError("Kompetisi sudah ditutup");
+    const mirror =
+      command.mirrorMeetings === undefined
+        ? (c.rules.mirrorMeetings ?? true)
+        : z.boolean().parse(command.mirrorMeetings);
     const ids = z.array(z.string()).parse(command.ids);
     if (
       ids.length !== c.matches.length ||
@@ -854,10 +1062,14 @@ export function applyCommand(
         );
     if (
       type === "shuffle_schedule" &&
-      ids.some(
-        (id, index) =>
-          scheduleBucket(c.matches.find((m) => m.id === id)!) !==
-          scheduleBucket(expectedSlots[index]),
+      ids.some((id, index) =>
+        expectedSlots[index].stage === "knockout"
+          ? scheduleBucket(c.matches.find((m) => m.id === id)!) !==
+            scheduleBucket(expectedSlots[index])
+          : poolKey(c.matches.find((m) => m.id === id)!) !==
+              poolKey(expectedSlots[index]) ||
+            c.matches.find((m) => m.id === id)!.meeting !==
+              expectedSlots[index].meeting,
       )
     )
       throw new DomainError(
@@ -865,20 +1077,24 @@ export function applyCommand(
       );
     if (
       type === "shuffle_schedule" &&
-      !roundsAreOrdered(
-        ids.map((id) => c.matches.find((match) => match.id === id)!),
+      !validSeasonDrawing(
+        c.matches,
+        ids.map((id) => c.matches.find((m) => m.id === id)!),
+        mirror,
       )
     )
       throw new DomainError(
-        "Putaran tidak dapat diurutkan karena posisi pertandingan yang sudah berjalan terkunci.",
+        "Jadwal harus menyelesaikan Putaran 1 sebelum Putaran 2, menjaga pekan pertandingan, dan mengikuti opsi urutan antarputaran tanpa memindahkan pertandingan yang sudah berjalan.",
       );
     before =
       type === "shuffle_schedule"
         ? {
             fixtureIds: c.matches.map((m) => m.id),
             timeSlots: c.matches.map((m) => m.scheduledAt),
+            mirrorMeetings: c.rules.mirrorMeetings ?? true,
           }
         : c.matches.map((m) => m.id);
+    if (type === "shuffle_schedule") c.rules.mirrorMeetings = mirror;
     c.matches = ids.map((id, order) => ({
       ...c.matches.find((m) => m.id === id)!,
       order,
@@ -896,7 +1112,11 @@ export function applyCommand(
     }));
     after =
       type === "shuffle_schedule"
-        ? { fixtureIds: ids, timeSlots: c.matches.map((m) => m.scheduledAt) }
+        ? {
+            fixtureIds: ids,
+            timeSlots: c.matches.map((m) => m.scheduledAt),
+            mirrorMeetings: mirror,
+          }
         : ids;
   } else if (type === "schedule") {
     const m = findMatch();
@@ -1027,6 +1247,7 @@ export function applyCommand(
       throw new DomainError("Tim lolos melebihi ukuran grup");
     c.rules = {
       meetings: v.meetings,
+      mirrorMeetings: c.rules.mirrorMeetings ?? true,
       win: v.win,
       draw: v.draw,
       loss: v.loss,

@@ -51,9 +51,10 @@ import {
   standings,
   restWarnings,
   generateFixtures,
-  shuffleSchedule,
+  shuffleSeasonSchedule,
   canShuffleSchedule,
-  roundsAreOrdered,
+  validSeasonDrawing,
+  seasonLabel,
   roleFor,
   type Competition,
   type Format,
@@ -1568,6 +1569,7 @@ function CompetitionView({
   const [shufflePreview, setShufflePreview] = useState<{
     matches: Match[];
     version: number;
+    mirrorMeetings: boolean;
   } | null>(null);
   const [shuffleError, setShuffleError] = useState("");
   const refresh = useCallback(async () => {
@@ -1835,7 +1837,9 @@ function CompetitionView({
                 <div className="featured-match" key={m.id}>
                   <div className="match-label">
                     <span>
-                      {m.group ? `Grup ${m.group}` : `Putaran ${m.round}`}
+                      {m.group
+                        ? `Grup ${m.group} · ${seasonLabel(m)}`
+                        : seasonLabel(m)}
                     </span>
                     <Badge status={m.status} />
                   </div>
@@ -1967,8 +1971,12 @@ function CompetitionView({
                   onClick={() => {
                     setShuffleError("");
                     setShufflePreview({
-                      matches: shuffleSchedule(c.matches),
+                      matches: shuffleSeasonSchedule(
+                        c.matches,
+                        c.rules.mirrorMeetings ?? true,
+                      ),
                       version: c.version,
+                      mirrorMeetings: c.rules.mirrorMeetings ?? true,
                     });
                   }}
                 >
@@ -2115,7 +2123,8 @@ function CompetitionView({
                   <div className="fixture-status">
                     <Badge status={m.status} />
                     <small className="fixture-round">
-                      {m.group ? `Grup ${m.group} · ` : ""}Putaran {m.round}
+                      {m.group ? `Grup ${m.group} · ` : ""}
+                      {seasonLabel(m)}
                     </small>
                     {m.scheduledAt && (
                       <small>
@@ -2267,13 +2276,46 @@ function CompetitionView({
           if (!busy) setShufflePreview(null);
         }}
         title="Tinjau hasil acak jadwal"
-        description="Grup, putaran, pasangan lawan, slot waktu, dan pertandingan yang sudah berjalan tetap dijaga."
+        description="Putaran pertama selesai sebelum putaran berikutnya. Pasangan lawan, giliran grup, dan slot waktu tetap dijaga."
       >
         {shufflePreview && (
           <div className="form-stack">
+            {c.matches.some(
+              (match) => match.stage !== "knockout" && match.meeting > 1,
+            ) && (
+              <label>
+                Urutan antarputaran
+                <select
+                  value={
+                    shufflePreview.mirrorMeetings ? "mirror" : "independent"
+                  }
+                  disabled={busy}
+                  onChange={(event) => {
+                    const mirrorMeetings = event.target.value === "mirror";
+                    setShuffleError("");
+                    setShufflePreview({
+                      matches: shuffleSeasonSchedule(c.matches, mirrorMeetings),
+                      version: c.version,
+                      mirrorMeetings,
+                    });
+                  }}
+                >
+                  <option value="mirror">Urutan sama antarputaran</option>
+                  <option value="independent">
+                    Acak masing-masing putaran
+                  </option>
+                </select>
+              </label>
+            )}
             <p>
-              Urutan pertandingan diacak dalam grup dan putaran yang sama.
-              Giliran grup mengikuti jadwal awal.
+              {c.matches.some(
+                (match) => match.stage !== "knockout" && match.meeting > 1,
+              ) &&
+                (shufflePreview.mirrorMeetings
+                  ? "Putaran 2 mengikuti urutan pasangan lawan Putaran 1, dengan kandang dan tandang dibalik."
+                  : "Setiap putaran diacak secara terpisah. Kandang dan tandang tetap dibalik pada pertemuan ulang.")}{" "}
+              Pengacakan menjaga pekan pertandingan, giliran grup, dan alur
+              babak gugur. Pertandingan yang sudah berjalan tetap terkunci.
             </p>
             <div className="shuffle-preview-list">
               {shufflePreview.matches.map((match, index) => (
@@ -2288,8 +2330,8 @@ function CompetitionView({
                       {team(match.away)?.name || "Menunggu peserta"}
                     </b>
                     <small>
-                      {match.group ? `Grup ${match.group} · ` : ""}Putaran{" "}
-                      {match.round}
+                      {match.group ? `Grup ${match.group} · ` : ""}
+                      {seasonLabel(match)}
                       {!["scheduled", "postponed"].includes(match.status)
                         ? " · Terkunci"
                         : ""}
@@ -2307,10 +2349,16 @@ function CompetitionView({
                 ulang.
               </p>
             )}
-            {!roundsAreOrdered(shufflePreview.matches) && (
+            {!validSeasonDrawing(
+              c.matches,
+              shufflePreview.matches,
+              shufflePreview.mirrorMeetings,
+            ) && (
               <div className="alert error">
-                Putaran belum bisa diurutkan karena posisi pertandingan yang
-                sudah berjalan terkunci.
+                Hasil acak ini tidak dapat diterapkan karena jadwal atau posisi
+                pertandingan yang sudah berjalan tidak cocok dengan opsi ini.
+                Coba acak masing-masing putaran atau pertahankan jadwal saat
+                ini.
               </div>
             )}
             {shuffleError && (
@@ -2329,8 +2377,12 @@ function CompetitionView({
               onClick={() => {
                 setShuffleError("");
                 setShufflePreview({
-                  matches: shuffleSchedule(c.matches),
+                  matches: shuffleSeasonSchedule(
+                    c.matches,
+                    shufflePreview.mirrorMeetings,
+                  ),
                   version: c.version,
+                  mirrorMeetings: shufflePreview.mirrorMeetings,
                 });
               }}
             >
@@ -2340,17 +2392,24 @@ function CompetitionView({
               className="button primary full"
               disabled={
                 busy ||
-                !roundsAreOrdered(shufflePreview.matches) ||
+                !validSeasonDrawing(
+                  c.matches,
+                  shufflePreview.matches,
+                  shufflePreview.mirrorMeetings,
+                ) ||
                 shufflePreview.version !== c.version ||
-                shufflePreview.matches.every(
+                (shufflePreview.matches.every(
                   (match, index) => match.id === c.matches[index]?.id,
-                )
+                ) &&
+                  shufflePreview.mirrorMeetings ===
+                    (c.rules.mirrorMeetings ?? true))
               }
               onClick={async () => {
                 try {
                   await command({
                     type: "shuffle_schedule",
                     ids: shufflePreview.matches.map((match) => match.id),
+                    mirrorMeetings: shufflePreview.mirrorMeetings,
                   });
                   setShufflePreview(null);
                 } catch (e) {
@@ -2639,7 +2698,7 @@ function Bracket({ c }: { c: Competition }) {
                 ? "Final"
                 : i === rounds.length - 2
                   ? "Semifinal"
-                  : `Putaran ${round}`}
+                  : `Babak ${round}`}
             </h3>
             <div>{ms.filter((m) => m.round === round).map(render)}</div>
           </div>
@@ -2776,7 +2835,7 @@ function MatchControl({
       <div className="control-meta">
         <span>
           Pertandingan {String(match.order + 1).padStart(2, "0")}{" "}
-          {match.group ? `· Grup ${match.group}` : ""} · Putaran {match.round}
+          {match.group ? `· Grup ${match.group}` : ""} · {seasonLabel(match)}
         </span>
         <Badge status={match.status} />
       </div>
