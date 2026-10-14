@@ -38,7 +38,8 @@ Demo menggunakan SQLite bawaan Node.js di `.data/demo.sqlite`. Data dan session 
 - Wizard nama/format/visibilitas → tim/aturan → tinjauan → draft.
 - Fourfeo tepat 4 tim; 1–10 pertemuan per pasangan. Liga 2–32 tim. Grup mendukung alokasi tidak sama dengan batas minimal dan kualifikasi yang divalidasi.
 - Jadwal circle method, sisi bergantian antarpertemuan, bye untuk jumlah tim non-pangkat dua, opsional perebutan tempat ketiga.
-- Urutan jadwal melalui drag/drop atau tombol naik/turun, optimasi jeda terbaik yang bisa dicapai, dan peringatan tim bermain berurutan.
+- Mode Atur urutan menampilkan drag/drop dan tombol naik/turun hanya saat dibutuhkan. Optimalkan jeda diganti Acak jadwal: pratinjau, acak ulang, lalu konfirmasi. Pengacakan memakai Web Crypto dan hanya menukar pertandingan dalam grup/putaran/pertemuan yang sama, menjaga giliran grup, pasangan lawan, slot waktu, identitas fixture, serta posisi pertandingan live/final. Final utama dan perebutan tempat ketiga tidak saling ditukar.
+- Daftar pertandingan mobile memakai dua baris ringkas (tim/skor, lalu grup/putaran/status), sekitar 96 px untuk nama pendek. Nama panjang tetap boleh membungkus; petunjuk ketuk hanya tampil sekali dan browser zoom tetap tersedia.
 - Ubah nama, tambah/hapus tim (selain Fourfeo), alokasi grup, serta aturan pada draft. Perubahan struktur memerlukan tinjauan dan konfirmasi sebelum membuat ulang jadwal.
 - Publikasi eksplisit; publik ditemukan di Jelajahi, tautan saja hanya melalui URL, privat hanya untuk panitia. Draft tidak terlihat oleh penonton.
 - Mulai live, simpan skor, masukkan hasil final langsung, konfirmasi final, koreksi dengan alasan, tunda/batalkan, serta waktu pertandingan.

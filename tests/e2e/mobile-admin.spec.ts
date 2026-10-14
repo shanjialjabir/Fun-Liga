@@ -99,6 +99,7 @@ test("main admin provisions accounts; other users cannot; mobile inputs and grou
   ]);
   await page.goto(`/dashboard/competitions/${c.id}/fixtures`);
   await expect(page.locator(".fixture-row")).toHaveCount(24);
+  await page.getByRole("button", { name: "Atur urutan", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Seimbangkan giliran grup", exact: true }),
   ).toBeVisible();

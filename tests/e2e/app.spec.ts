@@ -61,6 +61,7 @@ test("owner creates Fourfeo; operator and spectator permissions, scoring, confli
     ).status(),
   ).toBe(404);
   const firstId = c.matches[0].id;
+  await page.getByRole("button", { name: "Atur urutan", exact: true }).click();
   await page
     .getByRole("button", { name: "Turunkan pertandingan 1", exact: true })
     .click();
@@ -86,9 +87,7 @@ test("owner creates Fourfeo; operator and spectator permissions, scoring, confli
   ).json();
   expect(publicData.members).toEqual([]);
   expect(publicData.audit).toEqual([]);
-  await page
-    .getByRole("button", { name: "Kelola pertandingan 1", exact: true })
-    .click();
+  await page.locator(".fixture-row").nth(0).locator(".fixture-score").click();
   await page.getByRole("button", { name: "Mulai LIVE" }).click();
   await expect(
     page.getByRole("dialog").getByText("Tersimpan di server"),
@@ -118,9 +117,7 @@ test("owner creates Fourfeo; operator and spectator permissions, scoring, confli
       timeout: 10000,
     })
     .toContain("3");
-  await page
-    .getByRole("button", { name: "Kelola pertandingan 1", exact: true })
-    .click();
+  await page.locator(".fixture-row").nth(0).locator(".fixture-score").click();
   await page
     .getByText("Skor lama / tanpa catatan pemain", { exact: true })
     .click();
@@ -195,9 +192,7 @@ test("owner creates Fourfeo; operator and spectator permissions, scoring, confli
     ).status(),
   ).toBe(403);
   await op.goto(`/dashboard/competitions/${cid}/control`);
-  await op
-    .getByRole("button", { name: "Kelola pertandingan 2", exact: true })
-    .click();
+  await op.locator(".fixture-row").nth(1).locator(".fixture-score").click();
   await op.getByRole("button", { name: "Mulai LIVE" }).click();
   await expect(
     op.getByRole("dialog").getByText("Tersimpan di server"),

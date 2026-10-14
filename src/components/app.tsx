@@ -32,6 +32,7 @@ import {
   Shield,
   SlidersHorizontal,
   Sparkles,
+  Shuffle,
   Swords,
   Trophy,
   Trash2,
@@ -50,7 +51,8 @@ import {
   standings,
   restWarnings,
   generateFixtures,
-  prioritizeRest,
+  shuffleSchedule,
+  canShuffleSchedule,
   roleFor,
   type Competition,
   type Format,
@@ -1561,6 +1563,12 @@ function CompetitionView({
   const [group, setGroup] = useState("all");
   const [confirmLifecycle, setConfirmLifecycle] = useState<string | null>(null);
   const [tieOpen, setTieOpen] = useState(false);
+  const [orderMode, setOrderMode] = useState(false);
+  const [shufflePreview, setShufflePreview] = useState<{
+    matches: Match[];
+    version: number;
+  } | null>(null);
+  const [shuffleError, setShuffleError] = useState("");
   const refresh = useCallback(async () => {
     try {
       setC(await api<Competition>(`competitions/${id}`));
@@ -1937,43 +1945,43 @@ function CompetitionView({
                   : "Jadwal & hasil"}
               </h2>
               <p>
-                {admin
-                  ? "Pindahkan jadwal dengan tombol atau tarik baris. Hasil tetap tercatat."
-                  : "Ikuti pertandingan dari kick-off sampai hasil final."}
+                {edit
+                  ? "Ketuk pertandingan untuk catat gol."
+                  : "Ketuk pertandingan untuk melihat detail gol."}
               </p>
             </div>
-            <div className="section-inline" style={{ gap: 12 }}>
+            <div
+              className="section-inline schedule-summary"
+              style={{ gap: 12 }}
+            >
               <span className="muted">{c.matches.length} pertandingan</span>
-              {admin && c.format.includes("group") && (
+              {admin && (
                 <button
                   className="button secondary small"
                   disabled={
                     busy ||
+                    !canShuffleSchedule(c.matches) ||
                     ["archived", "completed", "cancelled"].includes(c.status)
                   }
-                  onClick={() => void run({ type: "group_balance" })}
+                  onClick={() => {
+                    setShuffleError("");
+                    setShufflePreview({
+                      matches: shuffleSchedule(c.matches),
+                      version: c.version,
+                    });
+                  }}
                 >
-                  Seimbangkan giliran grup
-                </button>
-              )}
-              {admin && (
-                <button
-                  className="button secondary small"
-                  disabled={busy}
-                  onClick={() =>
-                    void run({
-                      type: c.format.includes("group")
-                        ? "group_balance"
-                        : "reorder",
-                      ids: prioritizeRest(c.matches).map((m) => m.id),
-                    })
-                  }
-                >
-                  <Clock3 size={14} /> Optimalkan jeda
+                  <Shuffle size={16} /> Acak jadwal
                 </button>
               )}
             </div>
           </div>
+          {admin && !canShuffleSchedule(c.matches) && (
+            <p className="shuffle-unavailable">
+              Belum ada urutan alternatif dalam putaran yang sama. Pertandingan
+              yang sudah berjalan tetap terkunci.
+            </p>
+          )}
           <div className="match-filters">
             <div className="filter-pills">
               {[
@@ -2008,6 +2016,26 @@ function CompetitionView({
               </select>
             )}
           </div>
+          {admin && (
+            <div className="schedule-tools">
+              <button
+                className="text-link"
+                aria-pressed={orderMode}
+                onClick={() => setOrderMode(!orderMode)}
+              >
+                {orderMode ? "Selesai mengatur" : "Atur urutan"}
+              </button>
+              {orderMode && c.format.includes("group") && (
+                <button
+                  className="text-link"
+                  disabled={busy}
+                  onClick={() => void run({ type: "group_balance" })}
+                >
+                  Seimbangkan giliran grup
+                </button>
+              )}
+            </div>
+          )}
           <div className="fixture-list">
             {c.matches
               .filter(
@@ -2017,7 +2045,19 @@ function CompetitionView({
               )
               .map((m) => (
                 <div
-                  className="fixture-row"
+                  className={`fixture-row ${orderMode ? "is-ordering" : ""}`}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Buka pertandingan ${m.order + 1}: ${team(m.home)?.name || "Tim"} vs ${team(m.away)?.name || "Tim"}`}
+                  onKeyDown={(e) => {
+                    if (
+                      e.target === e.currentTarget &&
+                      ["Enter", " "].includes(e.key)
+                    ) {
+                      e.preventDefault();
+                      setSelected(m.id);
+                    }
+                  }}
                   key={m.id}
                   onClick={(e) => {
                     if (
@@ -2030,6 +2070,7 @@ function CompetitionView({
                   }}
                   draggable={
                     admin &&
+                    orderMode &&
                     ["scheduled", "postponed"].includes(m.status) &&
                     filter === "all" &&
                     group === "all"
@@ -2041,13 +2082,12 @@ function CompetitionView({
                   onDrop={(e) => {
                     e.preventDefault();
                     const source = e.dataTransfer.getData("text/plain");
-                    if (source && source !== m.id && admin)
+                    if (source && source !== m.id && admin && orderMode)
                       void reorder(source, m.id);
                   }}
                 >
                   <div className="fixture-index">
                     <span>{String(m.order + 1).padStart(2, "0")}</span>
-                    <small>{m.group ? `Grup ${m.group}` : `R${m.round}`}</small>
                   </div>
                   <div className="fixture-teams">
                     <span>
@@ -2073,14 +2113,9 @@ function CompetitionView({
                   </div>
                   <div className="fixture-status">
                     <Badge status={m.status} />
-                    <button
-                      type="button"
-                      className="match-tap-hint"
-                      onClick={() => setSelected(m.id)}
-                    >
-                      {edit ? "Ketuk untuk catat gol" : "Lihat detail gol"}{" "}
-                      <ArrowRight size={13} />
-                    </button>
+                    <small className="fixture-round">
+                      {m.group ? `Grup ${m.group} · ` : ""}R{m.round}
+                    </small>
                     {m.scheduledAt && (
                       <small>
                         {date(m.scheduledAt)} · {time(m.scheduledAt)}
@@ -2095,40 +2130,35 @@ function CompetitionView({
                       </small>
                     )}
                   </div>
-                  <div className="fixture-actions">
-                    {admin && ["scheduled", "postponed"].includes(m.status) && (
-                      <div className="reorder-buttons">
-                        <button
-                          aria-label={`Naikkan pertandingan ${m.order + 1}`}
-                          disabled={busy || m.order === 0}
-                          onClick={() =>
-                            void reorder(m.id, c.matches[m.order - 1].id)
-                          }
-                        >
-                          <ArrowUp size={14} />
-                        </button>
-                        <button
-                          aria-label={`Turunkan pertandingan ${m.order + 1}`}
-                          disabled={busy || m.order === c.matches.length - 1}
-                          onClick={() =>
-                            void reorder(m.id, c.matches[m.order + 1].id)
-                          }
-                        >
-                          <ArrowDown size={14} />
-                        </button>
-                      </div>
-                    )}
-                    {edit && (
-                      <button
-                        className="icon-button"
-                        title="Kelola pertandingan"
-                        aria-label={`Kelola pertandingan ${m.order + 1}`}
-                        onClick={() => setSelected(m.id)}
-                      >
-                        <Settings2 size={18} />
-                      </button>
-                    )}
-                  </div>
+                  {admin && orderMode && (
+                    <div className="fixture-actions">
+                      {admin &&
+                        ["scheduled", "postponed"].includes(m.status) && (
+                          <div className="reorder-buttons">
+                            <button
+                              aria-label={`Naikkan pertandingan ${m.order + 1}`}
+                              disabled={busy || m.order === 0}
+                              onClick={() =>
+                                void reorder(m.id, c.matches[m.order - 1].id)
+                              }
+                            >
+                              <ArrowUp size={14} />
+                            </button>
+                            <button
+                              aria-label={`Turunkan pertandingan ${m.order + 1}`}
+                              disabled={
+                                busy || m.order === c.matches.length - 1
+                              }
+                              onClick={() =>
+                                void reorder(m.id, c.matches[m.order + 1].id)
+                              }
+                            >
+                              <ArrowDown size={14} />
+                            </button>
+                          </div>
+                        )}
+                    </div>
+                  )}
                 </div>
               ))}
           </div>
@@ -2230,6 +2260,108 @@ function CompetitionView({
           description="Periksa hak akses dan navigasi kompetisi Anda."
         />
       )}
+      <Modal
+        open={!!shufflePreview}
+        onClose={() => {
+          if (!busy) setShufflePreview(null);
+        }}
+        title="Tinjau hasil acak jadwal"
+        description="Grup, putaran, pasangan lawan, slot waktu, dan pertandingan yang sudah berjalan tetap dijaga."
+      >
+        {shufflePreview && (
+          <div className="form-stack">
+            <p>
+              Urutan pertandingan diacak dalam grup dan putaran yang sama.
+              Giliran grup mengikuti jadwal awal.
+            </p>
+            <div className="shuffle-preview-list">
+              {shufflePreview.matches.map((match, index) => (
+                <div
+                  key={match.id}
+                  className={match.id !== c.matches[index]?.id ? "changed" : ""}
+                >
+                  <span>{index + 1}</span>
+                  <div>
+                    <b>
+                      {team(match.home)?.name || "Menunggu peserta"} vs{" "}
+                      {team(match.away)?.name || "Menunggu peserta"}
+                    </b>
+                    <small>
+                      {match.group ? `Grup ${match.group} · ` : ""}R
+                      {match.round}
+                      {!["scheduled", "postponed"].includes(match.status)
+                        ? " · Terkunci"
+                        : ""}
+                      {match.scheduledAt ? ` · ${time(match.scheduledAt)}` : ""}
+                    </small>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {shufflePreview.matches.every(
+              (match, index) => match.id === c.matches[index]?.id,
+            ) && (
+              <p>
+                Hasil acak kali ini sama dengan urutan awal. Anda bisa mengacak
+                ulang.
+              </p>
+            )}
+            {shuffleError && (
+              <div className="alert error" role="alert">
+                {shuffleError}
+              </div>
+            )}
+            {shufflePreview.version !== c.version && (
+              <div className="alert error">
+                Jadwal telah berubah. Buat hasil acak baru sebelum menyimpan.
+              </div>
+            )}
+            <button
+              className="button secondary full"
+              disabled={busy}
+              onClick={() => {
+                setShuffleError("");
+                setShufflePreview({
+                  matches: shuffleSchedule(c.matches),
+                  version: c.version,
+                });
+              }}
+            >
+              Acak ulang
+            </button>
+            <button
+              className="button primary full"
+              disabled={
+                busy ||
+                shufflePreview.version !== c.version ||
+                shufflePreview.matches.every(
+                  (match, index) => match.id === c.matches[index]?.id,
+                )
+              }
+              onClick={async () => {
+                try {
+                  await command({
+                    type: "shuffle_schedule",
+                    ids: shufflePreview.matches.map((match) => match.id),
+                  });
+                  setShufflePreview(null);
+                } catch (e) {
+                  setShuffleError((e as Error).message);
+                }
+              }}
+            >
+              {busy ? "Menyimpan…" : "Terapkan jadwal acak"}
+            </button>
+            <button
+              className="button secondary full"
+              disabled={busy}
+              onClick={() => setShufflePreview(null)}
+            >
+              Batal
+            </button>
+          </div>
+        )}
+      </Modal>
       <Modal
         open={publish}
         onClose={() => setPublish(false)}
@@ -3568,6 +3700,8 @@ function CompetitionSettings({
                           correct: "Hasil final dikoreksi",
                           publish: "Kompetisi dipublikasikan",
                           reorder: "Jadwal diurutkan",
+                          shuffle_schedule:
+                            "Jadwal diacak dengan putaran tetap",
                           group_balance: "Giliran grup diseimbangkan",
                           settings: "Pengaturan diubah",
                           rules: "Aturan dan jadwal diperbarui",

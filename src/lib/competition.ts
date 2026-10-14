@@ -273,6 +273,57 @@ export function balanceGroupSchedule(matches: Match[]): Match[] {
   flush();
   return result.map((match, order) => ({ ...match, order }));
 }
+function scheduleBucket(match: Match) {
+  return `${match.stage}:${match.group ?? ""}:${match.meeting}:${match.round}:${match.sourceOutcome ?? "winner"}`;
+}
+function randomIndex(max: number) {
+  const limit = Math.floor(0x100000000 / max) * max;
+  const buffer = new Uint32Array(1);
+  do {
+    crypto.getRandomValues(buffer);
+  } while (buffer[0] >= limit);
+  return buffer[0] % max;
+}
+export function shuffleSchedule(
+  matches: Match[],
+  draw: (max: number) => number = randomIndex,
+): Match[] {
+  const result = matches.map((match) => ({ ...match }));
+  const buckets = new Map<string, number[]>();
+  matches.forEach((match, index) => {
+    if (!["scheduled", "postponed"].includes(match.status)) return;
+    const key = scheduleBucket(match);
+    const slots = buckets.get(key) ?? [];
+    slots.push(index);
+    buckets.set(key, slots);
+  });
+  for (const slots of buckets.values()) {
+    const fixtures = slots.map((index) => matches[index]);
+    for (let i = fixtures.length - 1; i > 0; i--) {
+      const j = draw(i + 1);
+      [fixtures[i], fixtures[j]] = [fixtures[j], fixtures[i]];
+    }
+    slots.forEach((slot, index) => {
+      result[slot] = {
+        ...fixtures[index],
+        order: slot,
+        scheduledAt: matches[slot].scheduledAt,
+      };
+    });
+  }
+  return result;
+}
+export function canShuffleSchedule(matches: Match[]) {
+  const counts = new Map<string, number>();
+  for (const match of matches) {
+    if (!["scheduled", "postponed"].includes(match.status)) continue;
+    const key = scheduleBucket(match);
+    const count = (counts.get(key) ?? 0) + 1;
+    if (count > 1) return true;
+    counts.set(key, count);
+  }
+  return false;
+}
 export function knockout(teams: Team[], thirdPlace = false): Match[] {
   let size = 2;
   while (size < teams.length) size *= 2;
@@ -718,7 +769,12 @@ export function applyCommand(
     before = structuredClone(c.matches);
     c.matches = balanceGroupSchedule(c.matches);
     after = structuredClone(c.matches);
-  } else if (type === "reorder") {
+  } else if (type === "reorder" || type === "shuffle_schedule") {
+    if (
+      type === "shuffle_schedule" &&
+      ["archived", "completed", "cancelled"].includes(c.status)
+    )
+      throw new DomainError("Kompetisi sudah ditutup");
     const ids = z.array(z.string()).parse(command.ids);
     if (
       ids.length !== c.matches.length ||
@@ -733,12 +789,43 @@ export function applyCommand(
         throw new DomainError(
           "Pertandingan yang dimulai harus tetap di posisinya",
         );
-    before = c.matches.map((m) => m.id);
+    if (
+      type === "shuffle_schedule" &&
+      ids.some(
+        (id, index) =>
+          scheduleBucket(c.matches.find((m) => m.id === id)!) !==
+          scheduleBucket(c.matches[index]),
+      )
+    )
+      throw new DomainError(
+        "Pengacakan harus mempertahankan grup, putaran, dan pertemuan awal",
+      );
+    before =
+      type === "shuffle_schedule"
+        ? {
+            fixtureIds: c.matches.map((m) => m.id),
+            timeSlots: c.matches.map((m) => m.scheduledAt),
+          }
+        : c.matches.map((m) => m.id);
     c.matches = ids.map((id, order) => ({
       ...c.matches.find((m) => m.id === id)!,
       order,
+      ...(type === "shuffle_schedule"
+        ? {
+            scheduledAt: c.matches[order].scheduledAt,
+            version:
+              c.matches.find((m) => m.id === id)!.version +
+              (c.matches.find((m) => m.id === id)!.scheduledAt !==
+              c.matches[order].scheduledAt
+                ? 1
+                : 0),
+          }
+        : {}),
     }));
-    after = ids;
+    after =
+      type === "shuffle_schedule"
+        ? { fixtureIds: ids, timeSlots: c.matches.map((m) => m.scheduledAt) }
+        : ids;
   } else if (type === "schedule") {
     const m = findMatch();
     if (!["scheduled", "postponed"].includes(m.status))
