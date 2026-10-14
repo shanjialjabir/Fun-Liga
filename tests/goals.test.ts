@@ -94,7 +94,12 @@ describe("Goal ledger, player identity and statistics", () => {
     });
     expect(c.audit.at(-1)?.event).toBe("goal_add");
     expect(original.players).toBeUndefined();
-    expect(playerStatistics(c)).toEqual([]);
+    expect(
+      playerStatistics(c).find((p) => p.name === "Andi Saputra")?.goals,
+    ).toBe(1);
+    expect(
+      playerStatistics(c).find((p) => p.name === "Budi Santoso")?.assists,
+    ).toBe(1);
     expect(standings(c).find((r) => r.team.id === m.home)?.points).toBe(3);
     expect(standings(c, undefined, false).every((r) => r.points === 0)).toBe(
       true,
@@ -151,7 +156,7 @@ describe("Goal ledger, player identity and statistics", () => {
       "tidak ditemukan",
     );
   });
-  it("counts only final goals and assists, with audited final corrections requiring reason and confirmation", () => {
+  it("counts live and final goals and assists, with audited final corrections requiring reason and confirmation", () => {
     let c = final(goal(setup()));
     const g = c.matches[0].goals![0];
     expect(playerStatistics(c)).toEqual(
@@ -222,7 +227,10 @@ describe("Goal ledger, player identity and statistics", () => {
       "harus berbeda",
     );
     expect(() => goal(c, { scorerName: "x".repeat(81) })).toThrow();
-    expect(() => goal(c, { scorerName: "   " })).toThrow();
+    expect(
+      goal(c, { scorerName: "   ", assistName: "" }).matches[0].goals?.at(-1)
+        ?.scorerId,
+    ).toBeNull();
     expect(() => goal(c, { minute: -1 })).toThrow();
     expect(() =>
       command(
@@ -265,5 +273,121 @@ describe("Goal ledger, player identity and statistics", () => {
         reason: "Wasit membetulkan pencetak gol",
       }),
     ).toThrow("babak berikutnya");
+  });
+  it("records goals with an omitted or blank scorer without inventing player identities", () => {
+    let c = setup();
+    c = command(c, { type: "goal_add", teamId: c.matches[0].home });
+    expect(c.matches[0]).toMatchObject({ homeScore: 1, status: "live" });
+    expect(c.matches[0].goals![0]).toMatchObject({
+      scorerId: null,
+      scorerName: "",
+      assistId: null,
+    });
+    expect(c.players ?? []).toHaveLength(0);
+    expect(playerStatistics(c)).toEqual([]);
+    c = goal(c, { scorerName: "   ", assistName: "" });
+    expect(c.matches[0].homeScore).toBe(2);
+    expect(c.players ?? []).toHaveLength(0);
+    expect(standings(c)[0].points).toBe(3);
+  });
+
+  it("allows an assist with an unknown scorer and later adds or clears the scorer without changing score", () => {
+    let c = goal(setup(), { scorerName: "", assistName: "Budi Santoso" });
+    const g = c.matches[0].goals![0];
+    expect(playerStatistics(c)).toEqual([
+      expect.objectContaining({ name: "Budi Santoso", goals: 0, assists: 1 }),
+    ]);
+    c = command(c, {
+      type: "goal_update",
+      goalId: g.id,
+      teamId: g.teamId,
+      scorerName: "Andi Saputra",
+      assistName: "Budi Santoso",
+    });
+    expect(c.matches[0].homeScore).toBe(1);
+    expect(c.matches[0].goals![0].id).toBe(g.id);
+    expect(
+      playerStatistics(c).find((p) => p.name === "Andi Saputra")?.goals,
+    ).toBe(1);
+    c = command(c, {
+      type: "goal_update",
+      goalId: g.id,
+      teamId: g.teamId,
+      scorerName: "",
+      assistName: "Budi Santoso",
+    });
+    expect(c.matches[0].homeScore).toBe(1);
+    expect(c.matches[0].goals![0].scorerId).toBeNull();
+    expect(
+      playerStatistics(c).find((p) => p.name === "Andi Saputra"),
+    ).toBeUndefined();
+    expect(
+      playerStatistics(c).find((p) => p.name === "Budi Santoso")?.assists,
+    ).toBe(1);
+  });
+  it("updates live scorer and assist counts on editing/deletion and does not duplicate totals on finalization", () => {
+    let c = goal(setup());
+    c = goal(c);
+    expect(
+      playerStatistics(c).find((p) => p.name === "Andi Saputra")?.goals,
+    ).toBe(2);
+    expect(
+      playerStatistics(c).find((p) => p.name === "Budi Santoso")?.assists,
+    ).toBe(2);
+    c = command(c, { type: "goal_delete", goalId: c.matches[0].goals![1].id });
+    expect(
+      playerStatistics(c).find((p) => p.name === "Andi Saputra")?.goals,
+    ).toBe(1);
+    const before = playerStatistics(c);
+    c = final(c);
+    expect(playerStatistics(c)).toEqual(before);
+  });
+  it("supports unnamed own goals and excludes them from both live leaderboards", () => {
+    const c = goal(setup(), { scorerName: "", assistName: "", ownGoal: true });
+    expect(c.matches[0]).toMatchObject({
+      homeScore: 0,
+      awayScore: 1,
+      status: "live",
+    });
+    expect(playerStatistics(c)).toEqual([]);
+    expect(c.players ?? []).toHaveLength(0);
+  });
+  it("excludes postponed/cancelled games and restores statistics when play resumes", () => {
+    let c = goal(setup());
+    const before = playerStatistics(c);
+    c = command(c, { type: "match_status", status: "postponed" });
+    expect(playerStatistics(c)).toEqual([]);
+    c = command(c, { type: "match_status", status: "scheduled" });
+    expect(playerStatistics(c)).toEqual([]);
+    c = command(c, { type: "match_status", status: "live" });
+    expect(playerStatistics(c)).toEqual(before);
+    c = command(c, { type: "match_status", status: "postponed" });
+    c = command(c, { type: "match_status", status: "cancelled" });
+    expect(playerStatistics(c)).toEqual([]);
+  });
+  it("can name an anonymous finalized goal with audited confirmation while keeping its score", () => {
+    let c = setup();
+    c = command(c, { type: "goal_add", teamId: c.matches[0].home });
+    c = final(c);
+    const g = c.matches[0].goals![0];
+    expect(() =>
+      command(c, {
+        type: "goal_update",
+        goalId: g.id,
+        teamId: g.teamId,
+        scorerName: "Andi",
+      }),
+    ).toThrow("konfirmasi");
+    c = command(c, {
+      type: "goal_update",
+      goalId: g.id,
+      teamId: g.teamId,
+      scorerName: "Andi",
+      confirm: true,
+      reason: "Nama pencetak gol telah diketahui",
+    });
+    expect(c.matches[0]).toMatchObject({ homeScore: 1, status: "final" });
+    expect(playerStatistics(c)[0]).toMatchObject({ name: "Andi", goals: 1 });
+    expect(c.audit.at(-1)?.event).toBe("goal_update");
   });
 });

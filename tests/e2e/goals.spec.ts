@@ -45,7 +45,9 @@ test("tap match, autocomplete scorer and assist, own goal, edit/delete, final st
   };
   await open();
   await add();
-  await page.getByLabel("Pencetak gol", { exact: true }).fill("Andi Saputra");
+  await page
+    .getByLabel("Pencetak gol (opsional)", { exact: true })
+    .fill("Andi Saputra");
   await page.getByLabel("Assist (opsional)").fill("Budi Santoso");
   await page.getByLabel("Menit (opsional)").fill("5");
   await page.screenshot({ path: "test-results/goal-form-mobile.png" });
@@ -56,7 +58,7 @@ test("tap match, autocomplete scorer and assist, own goal, edit/delete, final st
     status: "live",
   });
   await add();
-  await page.getByLabel("Pencetak gol", { exact: true }).fill("an");
+  await page.getByLabel("Pencetak gol (opsional)", { exact: true }).fill("an");
   await expect(
     page.getByRole("option", { name: /Andi Saputra/ }),
   ).toBeVisible();
@@ -71,7 +73,9 @@ test("tap match, autocomplete scorer and assist, own goal, edit/delete, final st
   await page
     .getByRole("button", { name: "Gol bunuh diri", exact: true })
     .click();
-  await page.getByLabel("Pemain gol bunuh diri").fill("Rian Pratama");
+  await page
+    .getByLabel("Pemain gol bunuh diri (opsional)")
+    .fill("Rian Pratama");
   await expect(page.getByLabel("Assist (opsional)")).toHaveCount(0);
   await save();
   expect((await snapshot()).matches[0].homeScore).toBe(3);
@@ -120,7 +124,9 @@ test("tap match, autocomplete scorer and assist, own goal, edit/delete, final st
     .getByRole("button", { name: "Edit gol Andi Saputra", exact: true })
     .first()
     .click();
-  await page.getByLabel("Pencetak gol", { exact: true }).fill("BUDI SANTOSO");
+  await page
+    .getByLabel("Pencetak gol (opsional)", { exact: true })
+    .fill("BUDI SANTOSO");
   await page.getByLabel("Assist (opsional)").fill("Andi Saputra");
   await expect(
     page.getByRole("button", { name: "Simpan perubahan gol", exact: true }),

@@ -106,12 +106,12 @@ test("any recipient opens an invitation without an account; shared role, score e
   ).name;
   await guest.getByRole("button", { name: `Gol ${home}`, exact: true }).click();
   await guest
-    .getByLabel("Pencetak gol", { exact: true })
+    .getByLabel("Pencetak gol (opsional)", { exact: true })
     .fill("Pemain panitia");
   await guest.getByRole("button", { name: "Simpan gol", exact: true }).click();
-  await expect(guest.getByLabel("Pencetak gol", { exact: true })).toHaveCount(
-    0,
-  );
+  await expect(
+    guest.getByLabel("Pencetak gol (opsional)", { exact: true }),
+  ).toHaveCount(0);
   c = await (await page.request.get(path)).json();
   expect(c.matches[0].homeScore).toBe(1);
   await guest.screenshot({

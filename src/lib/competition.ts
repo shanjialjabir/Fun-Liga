@@ -23,7 +23,7 @@ export type Goal = {
   id: string;
   teamId: string;
   creditedTeamId: string;
-  scorerId: string;
+  scorerId: string | null;
   scorerName: string;
   assistId: string | null;
   assistName: string | null;
@@ -1129,10 +1129,13 @@ export function playerStatistics(c: Competition) {
       rows.set(playerId, { id: playerId, teamId, name, goals: 0, assists: 0 });
     return rows.get(playerId)!;
   };
-  for (const m of c.matches.filter((match) => match.status === "final")) {
+  for (const m of c.matches.filter((match) =>
+    ["live", "final"].includes(match.status),
+  )) {
     for (const g of m.goals ?? []) {
       if (g.ownGoal) continue;
-      row(g.scorerId, g.teamId, g.scorerName).goals++;
+      if (g.scorerId && g.scorerName)
+        row(g.scorerId, g.teamId, g.scorerName).goals++;
       if (g.assistId && g.assistName)
         row(g.assistId, g.teamId, g.assistName).assists++;
     }
@@ -1650,7 +1653,8 @@ export function applyCommand(
             scorerName: z
               .string()
               .transform(normalizePlayerName)
-              .pipe(z.string().min(1, "Isi nama pencetak gol").max(80)),
+              .pipe(z.string().max(80))
+              .default(""),
             assistName: z
               .string()
               .transform(normalizePlayerName)
@@ -1665,11 +1669,13 @@ export function applyCommand(
           throw new DomainError("Pemain harus berasal dari tim pertandingan");
         if (input.ownGoal && input.assistName)
           throw new DomainError("Gol bunuh diri tidak memiliki assist");
-        const scorer = resolvePlayer(c, input.teamId, input.scorerName);
+        const scorer = input.scorerName
+          ? resolvePlayer(c, input.teamId, input.scorerName)
+          : null;
         const assist = input.assistName
           ? resolvePlayer(c, input.teamId, input.assistName)
           : null;
-        if (assist?.id === scorer.id)
+        if (scorer && assist?.id === scorer.id)
           throw new DomainError(
             "Pencetak gol dan pemberi assist harus berbeda",
           );
@@ -1682,8 +1688,8 @@ export function applyCommand(
           id: id(),
           teamId: input.teamId,
           creditedTeamId,
-          scorerId: scorer.id,
-          scorerName: scorer.name,
+          scorerId: scorer?.id ?? null,
+          scorerName: scorer?.name ?? "",
           assistId: assist?.id ?? null,
           assistName: assist?.name ?? null,
           minute: input.minute,

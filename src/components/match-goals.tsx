@@ -146,7 +146,7 @@ export function GoalTimeline({
             </strong>
             <TeamMark team={team(goal.teamId)} size={30} />
             <div className="goal-event-info">
-              <b>{goal.scorerName}</b>
+              <b>{goal.scorerName || "Pencetak gol belum diisi"}</b>
               <small>
                 {team(goal.teamId)?.name}
                 {goal.ownGoal ? " · Gol bunuh diri" : ""}
@@ -162,7 +162,7 @@ export function GoalTimeline({
                 <button
                   type="button"
                   className="icon-button"
-                  aria-label={`Edit gol ${goal.scorerName}`}
+                  aria-label={`Edit gol ${goal.scorerName || "tanpa nama"}`}
                   onClick={() => onEdit?.(goal)}
                 >
                   <Pencil size={16} />
@@ -170,7 +170,7 @@ export function GoalTimeline({
                 <button
                   type="button"
                   className="icon-button goal-delete"
-                  aria-label={`Hapus gol ${goal.scorerName}`}
+                  aria-label={`Hapus gol ${goal.scorerName || "tanpa nama"}`}
                   onClick={() => onDelete?.(goal)}
                 >
                   <Trash2 size={16} />
@@ -180,7 +180,7 @@ export function GoalTimeline({
           </article>
         ))}
       {!match.goals?.length && (
-        <p className="muted">Belum ada nama pencetak gol yang dicatat.</p>
+        <p className="muted">Belum ada gol yang dicatat.</p>
       )}
       {baseline.home + baseline.away > 0 && (
         <p className="legacy-goals-note">
@@ -268,7 +268,7 @@ export function MatchGoals({
     setForm(true);
   };
   const save = async () => {
-    if (!ready || !normalizePlayerName(scorer)) return;
+    if (!ready) return;
     const ok = await send({
       type: editing ? "goal_update" : "goal_add",
       goalId: editing?.id,
@@ -379,12 +379,20 @@ export function MatchGoals({
             </p>
           )}
           <PlayerNameInput
-            label={ownGoal ? "Pemain gol bunuh diri" : "Pencetak gol"}
+            label={
+              ownGoal
+                ? "Pemain gol bunuh diri (opsional)"
+                : "Pencetak gol (opsional)"
+            }
             value={scorer}
             onChange={setScorer}
             players={candidates}
             disabled={busy}
           />
+          <p className="goal-note">
+            Nama boleh dikosongkan dan dilengkapi nanti. Gol tetap masuk ke skor
+            dan klasemen; top skor diperbarui setelah nama diisi.
+          </p>
           {!ownGoal && (
             <PlayerNameInput
               label="Assist (opsional)"
@@ -429,7 +437,7 @@ export function MatchGoals({
       )}
       {removing && (
         <section className="goal-entry form-stack">
-          <h3>Hapus gol {removing.scorerName}?</h3>
+          <h3>Hapus gol {removing.scorerName || "tanpa nama"}?</h3>
           <p>
             Skor {c.teams.find((t) => t.id === removing.creditedTeamId)?.name}{" "}
             berkurang 1. Catatan assist juga dihapus.
@@ -496,9 +504,9 @@ export function MatchGoals({
           className="button primary full goal-save"
           disabled={
             !ready ||
-            !normalizePlayerName(scorer) ||
             (!ownGoal &&
-              !!assist &&
+              !!normalizePlayerName(scorer) &&
+              !!normalizePlayerName(assist) &&
               playerNameKey(scorer) === playerNameKey(assist))
           }
           onClick={() => void save()}
@@ -562,21 +570,28 @@ export function MatchGoals({
 export function PlayerLeaders({ c }: { c: Competition }) {
   const rows = playerStatistics(c);
   const missing = c.matches
-    .filter((m) => m.status === "final")
+    .filter((m) => ["live", "final"].includes(m.status))
     .reduce(
       (sum, m) =>
         sum +
         (m.goalBaseline?.home ?? (m.goals ? 0 : m.homeScore)) +
-        (m.goalBaseline?.away ?? (m.goals ? 0 : m.awayScore)),
+        (m.goalBaseline?.away ?? (m.goals ? 0 : m.awayScore)) +
+        (m.goals ?? []).filter((goal) => !goal.ownGoal && !goal.scorerName)
+          .length,
       0,
     );
   return (
     <section className="player-leaders">
       <h2>Statistik pemain</h2>
       <p>
-        Hanya gol dan assist pertandingan final. Gol bunuh diri dan adu penalti
-        tidak dihitung.
+        Gol dan assist dari pertandingan LIVE dan final diperbarui otomatis. Gol
+        bunuh diri dan adu penalti tidak dihitung.
       </p>
+      {c.matches.some((match) => match.status === "live") && (
+        <p className="standings-live" role="status">
+          LIVE · Statistik pemain sementara
+        </p>
+      )}
       {missing > 0 && (
         <p className="legacy-goals-note">
           {missing} gol belum memiliki nama pencetak gol; daftar ini belum
@@ -606,8 +621,8 @@ export function PlayerLeaders({ c }: { c: Competition }) {
               ))}
             {!rows.some((p) => p[metric] > 0) && (
               <p>
-                Belum ada {metric === "goals" ? "gol" : "assist"} dari hasil
-                final.
+                Belum ada {metric === "goals" ? "gol" : "assist"} dengan nama
+                pemain yang dicatat.
               </p>
             )}
           </div>
