@@ -21,6 +21,9 @@ test("compact match list, opt-in ordering, drawing preview, cancel/apply and sta
   const snapshot = async () => (await page.request.get(path)).json();
   await page.goto(`/dashboard/competitions/${c.id}/fixtures`);
   await expect(page.locator(".fixture-row")).toHaveCount(24);
+  await expect(page.locator(".fixture-round").first()).toHaveText(
+    "Grup A · Putaran 1",
+  );
   await expect(
     page.getByRole("button", { name: "Optimalkan jeda" }),
   ).toHaveCount(0);
@@ -60,6 +63,9 @@ test("compact match list, opt-in ordering, drawing preview, cancel/apply and sta
   await expect(
     page.getByRole("heading", { name: "Tinjau hasil acak jadwal" }),
   ).toBeVisible();
+  await expect(
+    page.locator(".shuffle-preview-list small").first(),
+  ).toContainText("Putaran 1");
   expect((await snapshot()).matches.map((m: { id: string }) => m.id)).toEqual(
     c.matches.map((m: { id: string }) => m.id),
   );

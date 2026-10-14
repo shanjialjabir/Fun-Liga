@@ -238,9 +238,24 @@ export function interleaveGroups(
     matches.filter((m) => m.group === group),
   );
   const result: Match[] = [];
-  const count = Math.max(0, ...queues.map((queue) => queue.length));
-  for (let index = 0; index < count; index++)
-    for (const queue of queues) if (queue[index]) result.push(queue[index]);
+  const rounds = [...new Set(matches.map((match) => match.round))].sort(
+    (a, b) => a - b,
+  );
+  for (const round of rounds) {
+    const sourceQueues =
+      round === rounds[0]
+        ? queues
+        : [...queues].sort((a, b) =>
+            (a[0]?.group ?? "").localeCompare(b[0]?.group ?? ""),
+          );
+    const roundQueues = sourceQueues.map((queue) =>
+      queue.filter((match) => match.round === round),
+    );
+    const count = Math.max(0, ...roundQueues.map((queue) => queue.length));
+    for (let index = 0; index < count; index++)
+      for (const queue of roundQueues)
+        if (queue[index]) result.push(queue[index]);
+  }
   return result.map((match, order) => ({ ...match, order }));
 }
 export function balanceGroupSchedule(matches: Match[]): Match[] {
@@ -284,13 +299,53 @@ function randomIndex(max: number) {
   } while (buffer[0] >= limit);
   return buffer[0] % max;
 }
+export function roundsAreOrdered(matches: Match[]) {
+  return matches.every(
+    (match, index) =>
+      index === 0 ||
+      match.stage !== matches[index - 1].stage ||
+      match.round >= matches[index - 1].round,
+  );
+}
+function roundOrderedSchedule(matches: Match[]) {
+  if (roundsAreOrdered(matches)) return matches.map((match) => ({ ...match }));
+  const result: Match[] = [];
+  let pending: Match[] = [];
+  const flush = () => {
+    const firstRound = Math.min(...pending.map((match) => match.round));
+    const previous = result.at(-1);
+    const ordered =
+      pending[0]?.stage === "group"
+        ? interleaveGroups(
+            pending,
+            previous?.round === firstRound ? previous.group : undefined,
+          )
+        : [...pending].sort((a, b) => a.round - b.round);
+    ordered.forEach((match, index) =>
+      result.push({ ...match, scheduledAt: pending[index].scheduledAt }),
+    );
+    pending = [];
+  };
+  for (const match of matches) {
+    if (!["scheduled", "postponed"].includes(match.status)) {
+      flush();
+      result.push(match);
+    } else {
+      if (pending.length && pending[0].stage !== match.stage) flush();
+      pending.push(match);
+    }
+  }
+  flush();
+  return result.map((match, order) => ({ ...match, order }));
+}
 export function shuffleSchedule(
   matches: Match[],
   draw: (max: number) => number = randomIndex,
 ): Match[] {
-  const result = matches.map((match) => ({ ...match }));
+  const ordered = roundOrderedSchedule(matches);
+  const result = ordered.map((match) => ({ ...match }));
   const buckets = new Map<string, number[]>();
-  matches.forEach((match, index) => {
+  ordered.forEach((match, index) => {
     if (!["scheduled", "postponed"].includes(match.status)) return;
     const key = scheduleBucket(match);
     const slots = buckets.get(key) ?? [];
@@ -298,7 +353,7 @@ export function shuffleSchedule(
     buckets.set(key, slots);
   });
   for (const slots of buckets.values()) {
-    const fixtures = slots.map((index) => matches[index]);
+    const fixtures = slots.map((index) => ordered[index]);
     for (let i = fixtures.length - 1; i > 0; i--) {
       const j = draw(i + 1);
       [fixtures[i], fixtures[j]] = [fixtures[j], fixtures[i]];
@@ -314,6 +369,12 @@ export function shuffleSchedule(
   return result;
 }
 export function canShuffleSchedule(matches: Match[]) {
+  if (
+    roundOrderedSchedule(matches).some(
+      (match, index) => match.id !== matches[index].id,
+    )
+  )
+    return true;
   const counts = new Map<string, number>();
   for (const match of matches) {
     if (!["scheduled", "postponed"].includes(match.status)) continue;
@@ -770,6 +831,8 @@ export function applyCommand(
     c.matches = balanceGroupSchedule(c.matches);
     after = structuredClone(c.matches);
   } else if (type === "reorder" || type === "shuffle_schedule") {
+    const expectedSlots =
+      type === "shuffle_schedule" ? roundOrderedSchedule(c.matches) : c.matches;
     if (
       type === "shuffle_schedule" &&
       ["archived", "completed", "cancelled"].includes(c.status)
@@ -794,11 +857,20 @@ export function applyCommand(
       ids.some(
         (id, index) =>
           scheduleBucket(c.matches.find((m) => m.id === id)!) !==
-          scheduleBucket(c.matches[index]),
+          scheduleBucket(expectedSlots[index]),
       )
     )
       throw new DomainError(
         "Pengacakan harus mempertahankan grup, putaran, dan pertemuan awal",
+      );
+    if (
+      type === "shuffle_schedule" &&
+      !roundsAreOrdered(
+        ids.map((id) => c.matches.find((match) => match.id === id)!),
+      )
+    )
+      throw new DomainError(
+        "Putaran tidak dapat diurutkan karena posisi pertandingan yang sudah berjalan terkunci.",
       );
     before =
       type === "shuffle_schedule"

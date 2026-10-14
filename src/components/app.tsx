@@ -53,6 +53,7 @@ import {
   generateFixtures,
   shuffleSchedule,
   canShuffleSchedule,
+  roundsAreOrdered,
   roleFor,
   type Competition,
   type Format,
@@ -1834,7 +1835,7 @@ function CompetitionView({
                 <div className="featured-match" key={m.id}>
                   <div className="match-label">
                     <span>
-                      {m.group ? `Grup ${m.group}` : `Babak ${m.round}`}
+                      {m.group ? `Grup ${m.group}` : `Putaran ${m.round}`}
                     </span>
                     <Badge status={m.status} />
                   </div>
@@ -2114,7 +2115,7 @@ function CompetitionView({
                   <div className="fixture-status">
                     <Badge status={m.status} />
                     <small className="fixture-round">
-                      {m.group ? `Grup ${m.group} · ` : ""}R{m.round}
+                      {m.group ? `Grup ${m.group} · ` : ""}Putaran {m.round}
                     </small>
                     {m.scheduledAt && (
                       <small>
@@ -2287,7 +2288,7 @@ function CompetitionView({
                       {team(match.away)?.name || "Menunggu peserta"}
                     </b>
                     <small>
-                      {match.group ? `Grup ${match.group} · ` : ""}R
+                      {match.group ? `Grup ${match.group} · ` : ""}Putaran{" "}
                       {match.round}
                       {!["scheduled", "postponed"].includes(match.status)
                         ? " · Terkunci"
@@ -2305,6 +2306,12 @@ function CompetitionView({
                 Hasil acak kali ini sama dengan urutan awal. Anda bisa mengacak
                 ulang.
               </p>
+            )}
+            {!roundsAreOrdered(shufflePreview.matches) && (
+              <div className="alert error">
+                Putaran belum bisa diurutkan karena posisi pertandingan yang
+                sudah berjalan terkunci.
+              </div>
             )}
             {shuffleError && (
               <div className="alert error" role="alert">
@@ -2333,6 +2340,7 @@ function CompetitionView({
               className="button primary full"
               disabled={
                 busy ||
+                !roundsAreOrdered(shufflePreview.matches) ||
                 shufflePreview.version !== c.version ||
                 shufflePreview.matches.every(
                   (match, index) => match.id === c.matches[index]?.id,
@@ -2590,7 +2598,7 @@ function Bracket({ c }: { c: Competition }) {
         description="Selesaikan fase grup, lalu setujui kualifikasi untuk memulai babak gugur."
       />
     );
-  const rounds = [...new Set(ms.map((m) => m.round))].sort();
+  const rounds = [...new Set(ms.map((m) => m.round))].sort((a, b) => a - b);
   const third = c.matches.find((m) => m.sourceOutcome === "loser");
   const render = (m: Match) => (
     <div className="bracket-match" key={m.id}>
@@ -2631,7 +2639,7 @@ function Bracket({ c }: { c: Competition }) {
                 ? "Final"
                 : i === rounds.length - 2
                   ? "Semifinal"
-                  : `Babak ${round}`}
+                  : `Putaran ${round}`}
             </h3>
             <div>{ms.filter((m) => m.round === round).map(render)}</div>
           </div>
@@ -2768,7 +2776,7 @@ function MatchControl({
       <div className="control-meta">
         <span>
           Pertandingan {String(match.order + 1).padStart(2, "0")}{" "}
-          {match.group ? `· Grup ${match.group}` : ""}
+          {match.group ? `· Grup ${match.group}` : ""} · Putaran {match.round}
         </span>
         <Badge status={match.status} />
       </div>

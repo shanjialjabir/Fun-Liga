@@ -4,6 +4,7 @@ import {
   applyCommand,
   shuffleSchedule,
   canShuffleSchedule,
+  roundsAreOrdered,
 } from "../src/lib/competition";
 const owner = { id: crypto.randomUUID(), email: "shuffle-owner@example.test" };
 const operator = {
@@ -187,5 +188,56 @@ describe("Drawing within original rounds and group slots", () => {
     const finalRound = Math.max(...c.matches.map((m) => m.round));
     for (const [index, match] of c.matches.entries())
       if (match.round === finalRound) expect(proposed[index].id).toBe(match.id);
+  });
+  it("keeps global rounds ascending for uneven groups and repairs legacy interleaving when drawing", () => {
+    const c = createCompetition(
+      {
+        name: "Uneven rounds",
+        format: "group_stage",
+        groups: 2,
+        meetings: 1,
+        teamNames: Array.from({ length: 7 }, (_, i) => `Team ${i}`),
+      },
+      owner,
+    );
+    expect(c.matches.map((match) => match.round)).toEqual([
+      1, 1, 1, 2, 2, 2, 3, 3, 3,
+    ]);
+    const a = c.matches.filter((m) => m.group === "A");
+    const b = c.matches.filter((m) => m.group === "B");
+    c.matches = a
+      .flatMap((match, index) => (b[index] ? [match, b[index]] : [match]))
+      .map((match, order) => ({ ...match, order }));
+    expect(roundsAreOrdered(c.matches)).toBe(false);
+    const proposed = shuffleSchedule(c.matches, () => 0);
+    expect(roundsAreOrdered(proposed)).toBe(true);
+    const updated = applyCommand(c, owner, {
+      type: "shuffle_schedule",
+      version: c.version,
+      ids: proposed.map((m) => m.id),
+    });
+    expect(updated.matches.map((m) => m.round)).toEqual([
+      1, 1, 1, 2, 2, 2, 3, 3, 3,
+    ]);
+    expect(new Set(updated.matches.map((m) => m.id))).toEqual(
+      new Set(c.matches.map((m) => m.id)),
+    );
+  });
+  it("rejects sorting that would require moving an already-started round", () => {
+    const c = create("league");
+    const index = c.matches.findIndex((m) => m.round === 2);
+    [c.matches[0], c.matches[index]] = [c.matches[index], c.matches[0]];
+    c.matches = c.matches.map((m, order) => ({ ...m, order }));
+    c.matches[0].status = "live";
+    const proposed = shuffleSchedule(c.matches, () => 0);
+    expect(proposed[0]).toEqual(c.matches[0]);
+    expect(roundsAreOrdered(proposed)).toBe(false);
+    expect(() =>
+      applyCommand(c, owner, {
+        type: "shuffle_schedule",
+        version: c.version,
+        ids: proposed.map((m) => m.id),
+      }),
+    ).toThrow("Putaran tidak dapat diurutkan");
   });
 });
