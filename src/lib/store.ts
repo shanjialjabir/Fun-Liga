@@ -38,8 +38,27 @@ function supabase() {
   });
 }
 const hash = (s: string) => createHash("sha256").update(s).digest("hex");
-export type User = { id: string; email: string; name: string };
+export type User = {
+  id: string;
+  email: string;
+  name: string;
+  guest?: boolean;
+  competitionId?: string;
+  competitionName?: string;
+  role?: "admin" | "score_operator";
+  expiresAt?: number;
+};
 export async function currentUser(request: Request): Promise<User | null> {
+  const guestToken = request.headers
+    .get("cookie")
+    ?.split(";")
+    .map((value) => value.trim())
+    .find((value) => value.startsWith("fms_committee="))
+    ?.slice(14);
+  if (guestToken) {
+    const access = await findCommitteeAccess(guestToken);
+    if (access) return access.user;
+  }
   if (demoMode) {
     const token = request.headers
       .get("cookie")
@@ -220,6 +239,186 @@ export async function deleteCompetition(
     );
 }
 
+export async function findCommitteeAccess(token: string) {
+  if (!/^[a-f0-9]{64}$/.test(token)) return null;
+  const tokenHash = hash(token);
+  let c: Competition | null;
+  if (demoMode) {
+    const row = db()
+      .prepare(
+        "SELECT data FROM competitions WHERE EXISTS (SELECT 1 FROM json_each(competitions.data,'$.committeeLinks') WHERE json_extract(value,'$.tokenHash')=?) LIMIT 1",
+      )
+      .get(tokenHash) as { data: string } | undefined;
+    c = row ? JSON.parse(row.data) : null;
+  } else {
+    const { data, error } = await supabase()
+      .from("competitions")
+      .select("data")
+      .contains("data", { committeeLinks: [{ tokenHash }] })
+      .maybeSingle();
+    if (error) throw new DomainError("Gagal memeriksa akses panitia", 503);
+    c = data?.data ?? null;
+  }
+  const link = c?.committeeLinks?.find(
+    (link) => link.tokenHash === tokenHash && link.expiresAt > Date.now(),
+  );
+  if (!c || !link) return null;
+  return {
+    competition: c,
+    link,
+    user: {
+      id: `link:${link.id}`,
+      email: `link-${link.id}@panitia.invalid`,
+      name: link.label,
+      guest: true as const,
+      competitionId: c.id,
+      competitionName: c.name,
+      role: link.role,
+      expiresAt: link.expiresAt,
+    },
+  };
+}
+export async function createCommitteeLink(
+  c: Competition,
+  user: User,
+  role: "admin" | "score_operator",
+  label: string,
+) {
+  const token = randomBytes(32).toString("hex");
+  const link = {
+    id: crypto.randomUUID(),
+    tokenHash: hash(token),
+    role,
+    label:
+      label ||
+      (role === "admin"
+        ? "Admin melalui tautan"
+        : "Operator skor melalui tautan"),
+    expiresAt: Date.now() + 72 * 3600000,
+  };
+  const updated = structuredClone(c);
+  updated.committeeLinks ??= [];
+  updated.committeeLinks.push(link);
+  updated.version++;
+  updated.audit.push({
+    id: crypto.randomUUID(),
+    actor: user.guest ? `${user.name} (tautan)` : user.email,
+    event: "committee_link_created",
+    reason: null,
+    before: null,
+    after: {
+      id: link.id,
+      role: link.role,
+      label: link.label,
+      expiresAt: link.expiresAt,
+    },
+    at: new Date().toISOString(),
+  });
+  await saveCompetition(updated, c.version);
+  return { token, expiresAt: link.expiresAt };
+}
+export async function openCommitteeLink(token: string) {
+  const existing = await findCommitteeAccess(token);
+  if (existing) return existing;
+  // Unused legacy invitations retain their original expiration but now allow account-free access.
+  const tokenHash = hash(token);
+  let invite:
+    | {
+        competition_id: string;
+        role: "admin" | "score_operator";
+        email: string | null;
+        expires_at: number;
+        accepted_at: number | null;
+      }
+    | undefined;
+  if (demoMode)
+    invite = db()
+      .prepare("SELECT * FROM invites WHERE token_hash=?")
+      .get(tokenHash) as typeof invite;
+  else {
+    const { data, error } = await supabase()
+      .from("competition_invites")
+      .select("*")
+      .eq("token_hash", tokenHash)
+      .maybeSingle();
+    if (error) throw new DomainError("Gagal membaca undangan", 503);
+    invite = data ?? undefined;
+  }
+  if (!invite || invite.accepted_at || Number(invite.expires_at) <= Date.now())
+    throw new DomainError(
+      "Tautan panitia tidak valid, sudah dicabut, atau kedaluwarsa",
+      403,
+    );
+  const c = await getCompetition(invite.competition_id);
+  if (!c) throw new DomainError("Kompetisi tidak ditemukan", 404);
+  const previous = c.version;
+  const link = {
+    id: crypto.randomUUID(),
+    tokenHash,
+    role: invite.role,
+    label:
+      invite.role === "admin"
+        ? "Admin melalui tautan"
+        : "Operator skor melalui tautan",
+    expiresAt: Number(invite.expires_at),
+  };
+  c.committeeLinks ??= [];
+  c.committeeLinks.push(link);
+  c.version++;
+  c.audit.push({
+    id: crypto.randomUUID(),
+    actor: "Tautan panitia",
+    event: "committee_link_activated",
+    reason: null,
+    before: null,
+    after: { id: link.id, role: link.role, expiresAt: link.expiresAt },
+    at: new Date().toISOString(),
+  });
+  try {
+    if (demoMode) {
+      const database = db();
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        const consumed = database
+          .prepare(
+            "UPDATE invites SET accepted_at=? WHERE token_hash=? AND accepted_at IS NULL AND expires_at>?",
+          )
+          .run(Date.now(), tokenHash, Date.now());
+        if (!consumed.changes)
+          throw new DomainError("Undangan telah berubah", 409);
+        const saved = database
+          .prepare(
+            "UPDATE competitions SET version=?,data=? WHERE id=? AND version=?",
+          )
+          .run(c.version, JSON.stringify(c), c.id, previous);
+        if (!saved.changes) throw new DomainError("Konflik penyimpanan", 409);
+        database.exec("COMMIT");
+      } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
+      }
+    } else {
+      const { error } = await supabase().rpc("accept_competition_invite", {
+        payload: c,
+        expected_version: previous,
+        invite_hash: tokenHash,
+      });
+      if (error)
+        throw new DomainError(
+          "Undangan telah berubah. Buka tautan kembali.",
+          409,
+        );
+    }
+  } catch (error) {
+    const concurrent = await findCommitteeAccess(token);
+    if (concurrent) return concurrent;
+    throw error;
+  }
+  const result = await findCommitteeAccess(token);
+  if (!result) throw new DomainError("Akses panitia tidak tersedia", 403);
+  return result;
+}
+
 export async function createInvite(
   competitionId: string,
   role: "admin" | "score_operator",
@@ -366,7 +565,7 @@ export async function listManagedAccounts() {
   if (demoMode)
     return db()
       .prepare("SELECT id,email,name FROM users ORDER BY name")
-      .all() as User[];
+      .all() as unknown as User[];
   const client = supabase();
   const accounts: User[] = [];
   for (let page = 1; ; page++) {

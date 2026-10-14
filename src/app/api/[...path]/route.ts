@@ -19,6 +19,8 @@ import {
   saveCompetition,
   deleteCompetition,
   createInvite,
+  createCommitteeLink,
+  openCommitteeLink,
   acceptInvite,
   listInvites,
   revokeInvite,
@@ -29,10 +31,13 @@ import { isMainAdmin } from "@/lib/access";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 function safe(c: Competition, userId?: string) {
-  if (roleFor(c, userId)) return c;
-  return { ...c, ownerId: "", members: [], audit: [] };
+  const committeeLinks = c.committeeLinks?.map(
+    ({ id, label, role, expiresAt }) => ({ id, label, role, expiresAt }),
+  );
+  if (roleFor(c, userId)) return { ...c, committeeLinks };
+  return { ...c, ownerId: "", members: [], audit: [], committeeLinks: [] };
 }
-async function handle(
+async function dispatch(
   request: Request,
   context: { params: Promise<{ path: string[] }> },
 ) {
@@ -88,6 +93,7 @@ async function handle(
         .parse(await request.json());
       const result = demoLogin(input.email.toLowerCase(), input.name);
       const response = NextResponse.json({ user: result.user, demo: true });
+      response.cookies.delete("fms_committee");
       response.cookies.set("fms_session", result.token, {
         httpOnly: true,
         sameSite: "lax",
@@ -101,6 +107,7 @@ async function handle(
       if (demoMode) demoLogout(request);
       const response = NextResponse.json({ ok: true });
       response.cookies.delete("fms_session");
+      response.cookies.delete("fms_committee");
       return response;
     }
     if (path[0] === "competitions" && path.length === 1 && method === "GET") {
@@ -114,16 +121,52 @@ async function handle(
     }
     if (path[0] === "competitions" && path.length === 1 && method === "POST") {
       if (!user) throw new DomainError("Silakan masuk terlebih dahulu", 401);
+      if (user.guest)
+        throw new DomainError(
+          "Akses tautan hanya berlaku untuk kompetisi yang diundang",
+          403,
+        );
       const c = createCompetition(await request.json(), user);
       await saveCompetition(c);
       return NextResponse.json(c, { status: 201 });
     }
-    if (path[0] === "invite" && method === "POST") {
-      if (!user) throw new DomainError("Masuk terlebih dahulu", 401);
+    if (path[0] === "invite" && path[1] === "access" && method === "POST") {
       const { token } = z
         .object({ token: z.string().regex(/^[a-f0-9]{64}$/) })
         .parse(await request.json());
-      return NextResponse.json(await acceptInvite(token, user));
+      const access = await openCommitteeLink(token);
+      const response = NextResponse.json(
+        {
+          competitionId: access.competition.id,
+          role: access.link.role,
+          user: access.user,
+        },
+        {
+          headers: {
+            "Cache-Control": "no-store",
+            "Referrer-Policy": "no-referrer",
+          },
+        },
+      );
+      response.cookies.set("fms_committee", token, {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: url.protocol === "https:",
+        maxAge: Math.max(
+          1,
+          Math.floor((access.link.expiresAt - Date.now()) / 1000),
+        ),
+        path: "/",
+      });
+      return response;
+    }
+    if (path[0] === "invite" && method === "POST") {
+      if (!user || user.guest)
+        throw new DomainError("Masuk terlebih dahulu", 401);
+      const { token } = z
+        .object({ token: z.string().regex(/^[a-f0-9]{64}$/) })
+        .parse(await request.json());
+      return NextResponse.json(safe(await acceptInvite(token, user), user.id));
     }
     if (path[0] === "competitions" && path[1]) {
       const c = (await getCompetition(path[1])) || (await bySlug(path[1]));
@@ -166,6 +209,17 @@ async function handle(
           const { hash } = z
             .object({ hash: z.string() })
             .parse(await request.json());
+          const converted = c.committeeLinks?.find(
+            (link) => link.tokenHash === hash,
+          );
+          if (converted) {
+            const updated = applyCommand(c, user, {
+              type: "revoke_committee_link",
+              linkId: converted.id,
+              version: c.version,
+            });
+            await saveCompetition(updated, c.version);
+          }
           await revokeInvite(c.id, hash);
           return NextResponse.json({ ok: true });
         }
@@ -174,10 +228,17 @@ async function handle(
             .object({
               role: z.enum(["admin", "score_operator"]),
               email: z.union([z.email(), z.literal("")]).optional(),
+              mode: z.enum(["account", "link"]).default("account"),
+              label: z.string().trim().max(80).default(""),
             })
             .parse(await request.json());
           if (v.role === "admin" && role !== "owner")
             throw new DomainError("Hanya owner dapat mengundang admin", 403);
+          if (v.mode === "link")
+            return NextResponse.json(
+              await createCommitteeLink(c, user, v.role, v.label),
+              { headers: { "Cache-Control": "no-store" } },
+            );
           const token = await createInvite(c.id, v.role, v.email || null);
           return NextResponse.json({ token, expiresHours: 72 });
         }
@@ -186,7 +247,7 @@ async function handle(
         const data = await request.json();
         const updated = applyCommand(c, user, data);
         await saveCompetition(updated, c.version);
-        return NextResponse.json(updated);
+        return NextResponse.json(safe(updated, user.id));
       }
     }
     throw new DomainError("Endpoint tidak ditemukan", 404);
@@ -210,5 +271,13 @@ async function handle(
       { status: 500 },
     );
   }
+}
+async function handle(
+  request: Request,
+  context: { params: Promise<{ path: string[] }> },
+) {
+  const response = await dispatch(request, context);
+  response.headers.set("Cache-Control", "no-store");
+  return response;
 }
 export { handle as GET, handle as POST, handle as PATCH, handle as DELETE };

@@ -65,7 +65,16 @@ import { Modal, Badge, TeamMark, Empty, Loading } from "./ui";
 import { GroupDrawing, KnockoutDrawing } from "./drawing";
 import { MatchGoals, GoalTimeline, PlayerLeaders } from "./match-goals";
 
-type User = { id: string; email: string; name: string };
+type User = {
+  id: string;
+  email: string;
+  name: string;
+  guest?: boolean;
+  competitionId?: string;
+  competitionName?: string;
+  role?: "admin" | "score_operator";
+  expiresAt?: number;
+};
 const formatIcons = {
   fourfeo: Zap,
   league: Trophy,
@@ -86,6 +95,7 @@ const time = (value: string) =>
     minute: "2-digit",
     timeZone: "Asia/Jakarta",
   }).format(new Date(value));
+const dateTime = (value: string) => `${date(value)}, ${time(value)} WIB`;
 const memberLabels: Record<Role, string> = {
   owner: "Owner",
   admin: "Admin",
@@ -342,7 +352,22 @@ export function SoccerApp() {
               notify={setNotice}
             />
           ) : parts[0] === "dashboard" && parts[1] === "new" ? (
-            user ? (
+            user?.guest ? (
+              <div className="page">
+                <Empty
+                  title="Akses panitia melalui tautan"
+                  description="Akses Anda berlaku untuk kompetisi yang diundang."
+                  action={
+                    <Link
+                      className="button primary"
+                      href={`/dashboard/competitions/${user.competitionId}`}
+                    >
+                      Buka kompetisi
+                    </Link>
+                  }
+                />
+              </div>
+            ) : user ? (
               <CreateCompetition user={user} notify={setNotice} />
             ) : (
               <SignInEmpty login={requireLogin} />
@@ -363,8 +388,7 @@ export function SoccerApp() {
           ) : parts[0] === "invite" ? (
             <InviteAccept
               token={parts[1]}
-              user={user}
-              login={requireLogin}
+              onAccess={refreshSession}
               notify={setNotice}
             />
           ) : parts[0] === "help" ? (
@@ -751,7 +775,7 @@ function CompetitionList({
               : "Temukan permainan. Ikuti setiap momen."}
           </p>
         </div>
-        {mine && (
+        {mine && !user?.guest && (
           <Link href="/dashboard/new" className="button primary">
             <Plus size={18} /> Buat kompetisi
           </Link>
@@ -949,6 +973,7 @@ function AuthDialog({
             password: v.password,
           });
           if (error) throw error;
+          await api("logout", { method: "POST", body: "{}" });
           const access = await api<{ user: User | null }>("session");
           if (!access.user) {
             await authClient.auth.signOut();
@@ -1599,7 +1624,7 @@ function CompetitionView({
   }, [refresh]);
   const subscriptionId = c?.id;
   useEffect(() => {
-    if (demo || !authClient || !subscriptionId) return;
+    if (demo || user?.guest || !authClient || !subscriptionId) return;
     const channel = authClient
       .channel(`competition-${subscriptionId}`)
       .on(
@@ -1616,7 +1641,7 @@ function CompetitionView({
     return () => {
       void authClient?.removeChannel(channel);
     };
-  }, [demo, subscriptionId, user?.id, refresh]);
+  }, [demo, subscriptionId, user?.id, user?.guest, refresh]);
   const command = async (data: Record<string, unknown>) => {
     if (!c) throw new Error("Data belum tersedia");
     setBusy(true);
@@ -2242,7 +2267,13 @@ function CompetitionView({
       ) : activeTab === "teams" ? (
         <Teams c={c} admin={admin} command={command} />
       ) : activeTab === "members" && admin ? (
-        <Members c={c} role={role!} command={command} notify={notify} />
+        <Members
+          c={c}
+          role={role!}
+          command={command}
+          notify={notify}
+          refresh={refresh}
+        />
       ) : activeTab === "settings" && admin ? (
         <CompetitionSettings
           c={c}
@@ -3308,13 +3339,15 @@ function Members({
   role,
   command,
   notify,
+  refresh,
 }: {
   c: Competition;
   role: Role;
   command: (data: Record<string, unknown>) => Promise<Competition>;
   notify: (s: string) => void;
+  refresh: () => Promise<void>;
 }) {
-  const [email, setEmail] = useState("");
+  const [label, setLabel] = useState("");
   const [inviteRole, setInviteRole] = useState<"admin" | "score_operator">(
     "score_operator",
   );
@@ -3352,10 +3385,14 @@ function Members({
     try {
       const { token } = await api<{ token: string }>(
         `competitions/${c.id}/invites`,
-        { method: "POST", body: JSON.stringify({ email, role: inviteRole }) },
+        {
+          method: "POST",
+          body: JSON.stringify({ mode: "link", label, role: inviteRole }),
+        },
       );
       setLink(`${window.location.origin}/invite/${token}`);
       await load();
+      await refresh();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -3402,7 +3439,12 @@ function Members({
       <section className="panel">
         <div className="panel-heading">
           <h2>Panitia kompetisi</h2>
-          <span className="muted">{c.members.length} anggota</span>
+          <span className="muted">
+            {c.members.length} akun ·{" "}
+            {c.committeeLinks?.filter((access) => access.expiresAt > now)
+              .length ?? 0}{" "}
+            tautan
+          </span>
         </div>
         <div className="member-list">
           {c.members.map((m) => (
@@ -3441,8 +3483,54 @@ function Members({
           ))}
         </div>
         <div className="panel-heading">
-          <h3>Undangan aktif</h3>
+          <h3>Akses melalui tautan</h3>
         </div>
+        {(c.committeeLinks ?? []).map((access) => (
+          <div className="invite-row" key={access.id}>
+            <div>
+              <b>{access.label}</b>
+              <small>
+                {memberLabels[access.role]} ·{" "}
+                {access.expiresAt > now
+                  ? `berlaku sampai ${dateTime(new Date(access.expiresAt).toISOString())}`
+                  : "Kedaluwarsa"}
+              </small>
+              <small>Tanpa akun · dapat digunakan beberapa panitia</small>
+            </div>
+            {(role === "owner" || access.role === "score_operator") && (
+              <button
+                className="button secondary small"
+                disabled={busy}
+                onClick={async () => {
+                  setBusy(true);
+                  setError("");
+                  try {
+                    await command({
+                      type: "revoke_committee_link",
+                      linkId: access.id,
+                    });
+                    setLink("");
+                    notify("Akses tautan dicabut");
+                  } catch (e) {
+                    setError((e as Error).message);
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+              >
+                Cabut akses tautan
+              </button>
+            )}
+          </div>
+        ))}
+        {!c.committeeLinks?.length && (
+          <p className="muted padded">Belum ada akses melalui tautan.</p>
+        )}
+        {invites.some((i) => !i.accepted_at && i.expires_at > now) && (
+          <div className="panel-heading">
+            <h3>Undangan sebelumnya</h3>
+          </div>
+        )}
         {invites
           .filter((i) => !i.accepted_at && i.expires_at > now)
           .map((i) => (
@@ -3473,24 +3561,22 @@ function Members({
               </button>
             </div>
           ))}
-        {!invites.some((i) => !i.accepted_at && i.expires_at > now) && (
-          <p className="muted padded">Belum ada undangan aktif.</p>
-        )}
       </section>
       <section className="panel padded">
         <h2>Undang rekan panitia</h2>
         <p className="muted">
-          Bagikan tautan secara pribadi. Berlaku selama 72 jam dan hanya dapat
-          digunakan sekali.
+          Siapa pun yang membuka tautan langsung mendapat akses sesuai peran,
+          tanpa daftar atau login. Berlaku 72 jam dan bisa digunakan kembali
+          sampai kedaluwarsa atau dicabut.
         </p>
         <div className="form-stack">
           <label>
-            Email penerima (opsional)
+            Nama akses (opsional)
             <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="rekan@email.com"
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              maxLength={80}
+              placeholder="Operator lapangan 1"
             />
           </label>
           <label>
@@ -3774,6 +3860,9 @@ function CompetitionSettings({
                           knockout_draw: "Drawing bagan gugur diterapkan",
                           resolve_tie: "Peringkat seri diputuskan",
                           invite_accepted: "Undangan diterima",
+                          committee_link_created: "Akses tautan dibuat",
+                          committee_link_activated: "Akses tautan diaktifkan",
+                          revoke_committee_link: "Akses tautan dicabut",
                           lifecycle: "Kompetisi ditutup",
                         } as Record<string, string>
                       )[a.event] || a.event}
@@ -3895,6 +3984,36 @@ function Account({
   const [name, setName] = useState(user?.name || "");
   const [message, setMessage] = useState("");
   if (!user) return <SignInEmpty login={login} />;
+  if (user.guest)
+    return (
+      <div className="page narrow-page">
+        <section className="panel padded">
+          <h1>Akses panitia</h1>
+          <h2>{user.competitionName}</h2>
+          <p>
+            {user.name} · {memberLabels[user.role ?? "score_operator"]}
+          </p>
+          <p className="muted">
+            Masuk melalui tautan, tanpa akun. Berlaku sampai{" "}
+            {user.expiresAt
+              ? dateTime(new Date(user.expiresAt).toISOString())
+              : "tautan dicabut"}
+            .
+          </p>
+          <div className="form-stack">
+            <Link
+              className="button primary"
+              href={`/dashboard/competitions/${user.competitionId}/fixtures`}
+            >
+              Buka kompetisi
+            </Link>
+            <button className="button secondary" onClick={() => void logout()}>
+              Keluar dari akses tautan
+            </button>
+          </div>
+        </section>
+      </div>
+    );
   return (
     <div className="page narrow-page">
       <div className="page-heading">
@@ -4080,60 +4199,74 @@ function ManagedAccounts() {
 }
 function InviteAccept({
   token,
-  user,
-  login,
+  onAccess,
   notify,
 }: {
   token: string;
-  user: User | null;
-  login: () => void;
+  onAccess: () => Promise<void>;
   notify: (s: string) => void;
 }) {
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [retry, setRetry] = useState(0);
   const router = useRouter();
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      try {
+        const result = await api<{
+          competitionId: string;
+          role: "admin" | "score_operator";
+        }>("invite/access", {
+          method: "POST",
+          body: JSON.stringify({ token }),
+        });
+        if (!active) return;
+        await onAccess();
+        if (!active) return;
+        notify("Akses panitia aktif");
+        router.replace(
+          `/dashboard/competitions/${result.competitionId}/${result.role === "score_operator" ? "fixtures" : "overview"}`,
+        );
+      } catch (e) {
+        if (active) setError((e as Error).message);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [token, onAccess, notify, router, retry]);
   return (
     <div className="page narrow-page">
       <section className="panel padded">
-        <span className="creation-aside-icon">
-          <Users size={28} />
-        </span>
-        <h1>Selamat datang di tim panitia.</h1>
+        <h1>
+          {error ? "Tautan panitia tidak tersedia" : "Membuka akses panitia…"}
+        </h1>
         <p className="muted">
-          Terima undangan untuk membantu mengelola kompetisi. Undangan harus
-          masih berlaku dan sesuai email Anda.
+          Anda tidak perlu membuat akun atau login. Akses mengikuti peran yang
+          diberikan panitia.
         </p>
-        {error && <div className="alert error">{error}</div>}
-        <button
-          className="button primary"
-          disabled={busy}
-          onClick={async () => {
-            if (!user) {
-              login();
-              return;
-            }
-            setBusy(true);
-            try {
-              const c = await api<Competition>("invite", {
-                method: "POST",
-                body: JSON.stringify({ token }),
-              });
-              notify("Undangan diterima");
-              router.push(`/dashboard/competitions/${c.id}`);
-            } catch (e) {
-              setError((e as Error).message);
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          {busy
-            ? "Memproses…"
-            : user
-              ? "Terima undangan"
-              : "Masuk untuk menerima"}
-          <ArrowRight size={17} />
-        </button>
+        {error ? (
+          <div className="form-stack">
+            <div className="alert error" role="alert">
+              {error}
+            </div>
+            <p>
+              Minta tautan baru kepada pemilik kompetisi jika akses telah
+              dicabut atau kedaluwarsa.
+            </p>
+            <button
+              className="button secondary"
+              onClick={() => {
+                setError("");
+                setRetry((value) => value + 1);
+              }}
+            >
+              Coba lagi
+            </button>
+          </div>
+        ) : (
+          <Loading />
+        )}
       </section>
     </div>
   );
@@ -4165,7 +4298,7 @@ function Help() {
         },
         {
           title: "04 — Bekerja bersama",
-          text: "Undang admin atau operator skor melalui tautan yang berlaku 72 jam. Operator hanya bisa mengelola skor, bukan aturan dan anggota.",
+          text: "Undang admin atau operator skor melalui tautan yang berlaku 72 jam. Penerima langsung mendapat akses tanpa akun atau login, dan tautan dapat dipakai kembali sampai dicabut atau kedaluwarsa. Operator hanya bisa mengelola skor, bukan aturan dan anggota.",
         },
         {
           title: "Tentang demo lokal",

@@ -83,6 +83,13 @@ export type Competition = {
   createdAt: string;
   teams: Team[];
   players?: Player[];
+  committeeLinks?: {
+    id: string;
+    tokenHash?: string;
+    role: "admin" | "score_operator";
+    label: string;
+    expiresAt: number;
+  }[];
   matches: Match[];
   rules: {
     meetings: number;
@@ -1070,6 +1077,10 @@ export function roleFor(
   c: Competition,
   userId: string | undefined,
 ): Role | undefined {
+  if (userId?.startsWith("link:"))
+    return c.committeeLinks?.find(
+      (link) => link.id === userId.slice(5) && link.expiresAt > Date.now(),
+    )?.role;
   return c.members.find((m) => m.userId === userId)?.role;
 }
 export function canView(c: Competition, userId?: string) {
@@ -1127,7 +1138,7 @@ export function playerStatistics(c: Competition) {
 
 export function applyCommand(
   original: Competition,
-  user: { id: string; email: string },
+  user: { id: string; email: string; name?: string; guest?: boolean },
   command: Record<string, unknown>,
 ): Competition {
   const c = structuredClone(original);
@@ -1577,6 +1588,19 @@ export function applyCommand(
     before = c.tieOrder;
     c.tieOrder = ids;
     after = ids;
+  } else if (type === "revoke_committee_link") {
+    const link = c.committeeLinks?.find((link) => link.id === command.linkId);
+    if (!link) throw new DomainError("Akses tautan tidak ditemukan", 404);
+    if (role !== "owner" && link.role === "admin")
+      throw new DomainError("Hanya owner dapat mencabut tautan admin", 403);
+    before = {
+      id: link.id,
+      role: link.role,
+      label: link.label,
+      expiresAt: link.expiresAt,
+    };
+    c.committeeLinks = c.committeeLinks!.filter((item) => item.id !== link.id);
+    after = null;
   } else if (type === "revoke") {
     if (command.userId === c.ownerId)
       throw new DomainError("Owner terakhir tidak dapat dihapus");
@@ -1813,7 +1837,7 @@ export function applyCommand(
   c.version++;
   c.audit.push({
     id: id(),
-    actor: user.email,
+    actor: user.guest ? `${user.name || "Panitia"} (tautan)` : user.email,
     event: type,
     reason,
     before,

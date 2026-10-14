@@ -52,6 +52,51 @@ afterAll(async () => {
   await pg?.close();
 });
 describe("PostgreSQL migration, RLS and transactional RPC", () => {
+  it("stores committee capabilities without creating an Auth user or FK membership", async () => {
+    const target = createCompetition(
+      {
+        name: "Account-free database test",
+        format: "fourfeo",
+        teamNames: ["A", "B", "C", "D"],
+      },
+      owner,
+    );
+    const linkId = crypto.randomUUID();
+    target.committeeLinks = [
+      {
+        id: linkId,
+        tokenHash: "a".repeat(64),
+        role: "score_operator",
+        label: "Lapangan",
+        expiresAt: Date.now() + 3600000,
+      },
+    ];
+    await asRole(
+      "service_role",
+      null,
+      "SELECT save_competition($1::jsonb,null)",
+      [JSON.stringify(target)],
+    );
+    const members = await pg.query<{ count: number }>(
+      "SELECT count(*)::int as count FROM competition_members WHERE competition_id=$1",
+      [target.id],
+    );
+    expect(members.rows[0].count).toBe(1);
+    const auth = await pg.query<{ count: number }>(
+      "SELECT count(*)::int as count FROM auth.users WHERE id=$1",
+      [linkId],
+    );
+    expect(auth.rows[0].count).toBe(0);
+    const lookup = await asRole<{ data: { committeeLinks: { id: string }[] } }>(
+      "service_role",
+      null,
+      "SELECT data FROM competitions WHERE data @> $1::jsonb",
+      [JSON.stringify({ committeeLinks: [{ tokenHash: "a".repeat(64) }] })],
+    );
+    expect(lookup.rows[0].data.committeeLinks[0].id).toBe(linkId);
+    await pg.query("DELETE FROM competitions WHERE id=$1", [target.id]);
+  });
+
   it("deletes only the matching owner/version/name and cascades related data", async () => {
     const target = createCompetition(
       {

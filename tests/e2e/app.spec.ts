@@ -160,13 +160,6 @@ test("owner creates Fourfeo; operator and spectator permissions, scoring, confli
   const operator = await browser.newContext();
   const op = await operator.newPage();
   await op.goto(invite.replace("localhost", "127.0.0.1"));
-  await op.getByRole("button", { name: "Masuk untuk menerima" }).click();
-  await op.getByLabel("Nama Anda").fill("Operator Uji");
-  await op
-    .getByLabel("Email", { exact: true })
-    .fill("operator-e2e@example.test");
-  await op.getByRole("button", { name: "Masuk & mulai bermain" }).click();
-  await op.getByRole("button", { name: "Terima undangan" }).click();
   await expect(op).toHaveURL(new RegExp(`/dashboard/competitions/${cid}`));
   await expect(
     op.getByRole("link", { name: "Pengaturan", exact: true }),
@@ -199,7 +192,9 @@ test("owner creates Fourfeo; operator and spectator permissions, scoring, confli
   ).toBeVisible();
   await op.getByRole("button", { name: "Tutup dialog" }).click();
   await page.reload();
-  await page.getByRole("button", { name: "Cabut akses" }).click();
+  await page
+    .getByRole("button", { name: "Cabut akses tautan", exact: true })
+    .click();
   const latest = await (
     await page.request.get(`/api/competitions/${cid}`)
   ).json();
@@ -217,7 +212,7 @@ test("owner creates Fourfeo; operator and spectator permissions, scoring, confli
         },
       })
     ).status(),
-  ).toBe(403);
+  ).toBe(401);
   // Finalize the live match before archiving; archived scores are immutable.
   await page.request.patch(`/api/competitions/${cid}`, {
     data: {
