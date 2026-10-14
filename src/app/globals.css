@@ -4751,3 +4751,69 @@ small {
   padding: 0 20px 12px;
   font-size: 12px;
 }
+
+.drawing-entry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.drawing-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  color: var(--muted);
+}
+.drawing-team-list,
+.drawing-pairs {
+  display: grid;
+  gap: 12px;
+}
+.drawing-team-list label {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 110px;
+  align-items: center;
+  gap: 12px;
+}
+.drawing-team-list label span {
+  overflow-wrap: anywhere;
+}
+.drawing-pair {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.drawing-pair select {
+  width: 100%;
+  min-width: 0;
+}
+.drawing-bracket-preview {
+  display: grid;
+  gap: 12px;
+}
+.drawing-bracket-preview > div {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  background: var(--surface);
+  border-radius: 8px;
+}
+.drawing-bracket-preview small {
+  color: var(--muted);
+}
+.drawing-bracket-preview span {
+  overflow-wrap: anywhere;
+}
+.drawing-heading {
+  flex-wrap: wrap;
+}
+.drawing-heading > div:first-child {
+  flex: 1 1 150px;
+}
+.drawing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

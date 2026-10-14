@@ -62,6 +62,7 @@ import {
   type Role,
 } from "@/lib/competition";
 import { Modal, Badge, TeamMark, Empty, Loading } from "./ui";
+import { GroupDrawing, KnockoutDrawing } from "./drawing";
 import { MatchGoals, GoalTimeline, PlayerLeaders } from "./match-goals";
 
 type User = { id: string; email: string; name: string };
@@ -1446,7 +1447,9 @@ function CreateCompetition({
                 <div className="alert">
                   Kompetisi dibuat sebagai <b>draft</b>. Anda bisa meninjau,
                   menyusun ulang jadwal, dan menentukan waktu pertandingan
-                  sebelum publikasi.
+                  sebelum publikasi.{" "}
+                  {chosen.includes("group") &&
+                    "Pembagian grup diacak otomatis; Anda bisa mengacak ulang atau mengaturnya manual melalui Drawing grup."}
                 </div>
                 <dl>
                   <div>
@@ -1620,7 +1623,7 @@ function CompetitionView({
     try {
       const updated = await api<Competition>(`competitions/${c.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ ...data, version: c.version }),
+        body: JSON.stringify({ ...data, version: data.version ?? c.version }),
       });
       setC(updated);
       setError("");
@@ -2214,19 +2217,11 @@ function CompetitionView({
             Urutan: poin → selisih gol → gol memasukkan → head-to-head →
             keputusan panitia. Peringkat seri ditandai.
           </div>
-          {admin &&
-            c.format === "group_then_knockout" &&
-            !c.matches.some((m) => m.stage === "knockout") && (
-              <div className="panel-foot">
-                <button
-                  className="button primary"
-                  disabled={busy}
-                  onClick={() => void run({ type: "qualify" })}
-                >
-                  <Flag size={16} /> Setujui kualifikasi & buat bracket
-                </button>
-              </div>
-            )}
+          {admin && c.format === "group_then_knockout" && (
+            <div className="panel-foot">
+              <KnockoutDrawing c={c} command={command} />
+            </div>
+          )}
         </section>
       ) : activeTab === "bracket" ? (
         <section className="panel">
@@ -2238,19 +2233,11 @@ function CompetitionView({
             <Swords size={21} />
           </div>
           <Bracket c={c} />
-          {admin &&
-            c.format === "group_then_knockout" &&
-            !c.matches.some((m) => m.stage === "knockout") && (
-              <div className="panel-foot">
-                <button
-                  className="button primary"
-                  disabled={busy}
-                  onClick={() => void run({ type: "qualify" })}
-                >
-                  Setujui kualifikasi & buat bracket <ArrowRight size={16} />
-                </button>
-              </div>
-            )}
+          {admin && (
+            <div className="panel-foot">
+              <KnockoutDrawing c={c} command={command} />
+            </div>
+          )}
         </section>
       ) : activeTab === "teams" ? (
         <Teams c={c} admin={admin} command={command} />
@@ -3157,23 +3144,28 @@ function Teams({
   };
   return (
     <section className="panel">
-      <div className="panel-heading">
+      <div className="panel-heading drawing-heading">
         <div>
           <h2>Tim peserta</h2>
           <p>{c.teams.length} tim, satu semangat permainan.</p>
         </div>
-        {admin && c.status === "draft" && (
-          <button
-            className="button secondary small"
-            onClick={() => {
-              setTeams(c.teams);
-              setError("");
-              setEdit(!edit);
-            }}
-          >
-            {edit ? "Batal edit" : "Edit tim & grup"}
-          </button>
-        )}
+        <div className="drawing-actions">
+          {admin && c.status === "draft" && (
+            <GroupDrawing c={c} command={command} />
+          )}
+          {admin && c.status === "draft" && (
+            <button
+              className="button secondary small"
+              onClick={() => {
+                setTeams(c.teams);
+                setError("");
+                setEdit(!edit);
+              }}
+            >
+              {edit ? "Batal edit" : "Edit tim & grup"}
+            </button>
+          )}
+        </div>
       </div>
       <div className="teams-grid">
         {(edit ? teams : c.teams).map((t, i) => (
@@ -3778,6 +3770,8 @@ function CompetitionSettings({
                           schedule: "Waktu pertandingan diatur",
                           teams: "Tim diperbarui",
                           qualify: "Kualifikasi disetujui",
+                          group_draw: "Drawing grup diterapkan",
+                          knockout_draw: "Drawing bagan gugur diterapkan",
                           resolve_tie: "Peringkat seri diputuskan",
                           invite_accepted: "Undangan diterima",
                           lifecycle: "Kompetisi ditutup",

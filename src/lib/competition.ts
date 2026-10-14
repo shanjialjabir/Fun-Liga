@@ -98,6 +98,7 @@ export type Competition = {
   members: { userId: string; email: string; role: Role }[];
   audit: Audit[];
   tieOrder: string[];
+  knockoutDrawing?: { slots: (string | null)[]; avoidSameGroup: boolean };
 };
 export const competitionInput = z
   .object({
@@ -588,14 +589,186 @@ export function canShuffleSchedule(matches: Match[]) {
   }
   return false;
 }
-export function knockout(teams: Team[], thirdPlace = false): Match[] {
+function drawItems<T>(
+  items: T[],
+  draw: (max: number) => number = randomIndex,
+): T[] {
+  const result = [...items];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = draw(i + 1);
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
+export function drawGroups(
+  teams: Team[],
+  groups: number,
+  draw: (max: number) => number = randomIndex,
+): Team[] {
+  const assignments = new Map(
+    drawItems(teams, draw).map((team, index) => [
+      team.id,
+      String.fromCharCode(65 + (index % groups)),
+    ]),
+  );
+  return teams.map((team) => ({ ...team, group: assignments.get(team.id)! }));
+}
+export function bracketSize(count: number) {
+  let size = 2;
+  while (size < count) size *= 2;
+  return size;
+}
+export function validateBracketSlots(
+  teams: Team[],
+  slots: (string | null)[],
+  avoidSameGroup = false,
+) {
+  const ids = slots.filter((slot): slot is string => slot !== null);
+  if (
+    slots.length !== bracketSize(teams.length) ||
+    ids.length !== teams.length ||
+    new Set(ids).size !== ids.length ||
+    ids.some((id) => !teams.some((team) => team.id === id))
+  )
+    throw new DomainError(
+      "Isi bagan dengan setiap tim lolos tepat satu kali dan jumlah bye yang sesuai",
+    );
+  for (let i = 0; i < slots.length; i += 2) {
+    if (slots[i] === null && slots[i + 1] === null)
+      throw new DomainError(
+        "Dua bye tidak boleh berada dalam pasangan yang sama",
+      );
+    const home = teams.find((team) => team.id === slots[i]);
+    const away = teams.find((team) => team.id === slots[i + 1]);
+    if (avoidSameGroup && home?.group && home.group === away?.group)
+      throw new DomainError(
+        "Babak awal tidak boleh mempertemukan tim dari grup yang sama",
+      );
+  }
+}
+export function drawBracketSlots(
+  teams: Team[],
+  avoidSameGroup = true,
+  draw: (max: number) => number = randomIndex,
+): (string | null)[] {
+  const shuffled = drawItems(teams, draw);
+  const solve = (
+    remaining: Team[],
+    byes: number,
+  ): (string | null)[][] | null => {
+    if (!remaining.length) return byes === 0 ? [] : null;
+    if (byes < 0 || byes > remaining.length) return null;
+    if (avoidSameGroup) {
+      const counts = new Map<string, number>();
+      for (const team of remaining)
+        if (team.group)
+          counts.set(team.group, (counts.get(team.group) ?? 0) + 1);
+      if (
+        [...counts.values()].some(
+          (count) => count > (remaining.length + byes) / 2,
+        )
+      )
+        return null;
+    }
+    const first = remaining[0];
+    for (let i = 1; i < remaining.length; i++) {
+      const other = remaining[i];
+      if (avoidSameGroup && first.group && first.group === other.group)
+        continue;
+      const next = solve(
+        remaining.filter((_, index) => index !== 0 && index !== i),
+        byes,
+      );
+      if (next) return [[first.id, other.id], ...next];
+    }
+    if (byes > 0) {
+      const next = solve(remaining.slice(1), byes - 1);
+      if (next) return [[first.id, null], ...next];
+    }
+    return null;
+  };
+  const pairs = solve(shuffled, bracketSize(teams.length) - teams.length);
+  if (!pairs)
+    throw new DomainError(
+      "Drawing tanpa pertemuan sesama grup tidak memungkinkan. Pilih drawing bebas atau ubah aturan kompetisi.",
+    );
+  const slots = drawItems(pairs, draw).flatMap((pair) => drawItems(pair, draw));
+  validateBracketSlots(teams, slots, avoidSameGroup);
+  return slots;
+}
+export function qualifiedTeams(c: Competition): Team[] {
+  if (c.format === "knockout") return c.teams;
+  if (c.format !== "group_then_knockout")
+    throw new DomainError("Format ini tidak memiliki babak gugur");
+  if (
+    c.matches
+      .filter((match) => match.stage === "group")
+      .some((match) => match.status !== "final" && match.status !== "cancelled")
+  )
+    throw new DomainError("Selesaikan fase grup terlebih dahulu");
+  const qualified: Team[] = [];
+  for (let i = 0; i < c.rules.groups; i++) {
+    const rows = standings(c, String.fromCharCode(65 + i));
+    if (rows.slice(0, c.rules.qualifiers).some((row) => row.tied))
+      throw new DomainError(
+        "Peringkat seri perlu keputusan panitia terlebih dahulu",
+      );
+    qualified.push(...rows.slice(0, c.rules.qualifiers).map((row) => row.team));
+  }
+  return qualified;
+}
+function startedMatchIds(c: Competition) {
+  const ids = new Set<string>();
+  for (const audit of c.audit)
+    for (const value of [audit.before, audit.after]) {
+      if (
+        value &&
+        typeof value === "object" &&
+        "id" in value &&
+        "status" in value &&
+        typeof value.id === "string" &&
+        ["live", "final"].includes(String(value.status))
+      )
+        ids.add(value.id);
+    }
+  return ids;
+}
+export function canDrawKnockout(c: Competition) {
+  const started = startedMatchIds(c);
+  return (
+    ["knockout", "group_then_knockout"].includes(c.format) &&
+    !["completed", "archived", "cancelled"].includes(c.status) &&
+    c.matches
+      .filter((match) => match.stage === "knockout")
+      .every(
+        (match) =>
+          ["scheduled", "postponed"].includes(match.status) &&
+          match.homeScore === 0 &&
+          match.awayScore === 0 &&
+          !match.goals?.length &&
+          match.homePenalty === null &&
+          match.awayPenalty === null &&
+          !match.winner &&
+          !started.has(match.id),
+      )
+  );
+}
+
+export function knockout(
+  teams: Team[],
+  thirdPlace = false,
+  positions?: (string | null)[],
+): Match[] {
   let size = 2;
   while (size < teams.length) size *= 2;
   let seeds = [1, 2];
   while (seeds.length < size)
     seeds = seeds.flatMap((s) => [s, seeds.length * 2 + 1 - s]);
   type Slot = { team: string | null; source?: string };
-  let slots: Slot[] = seeds.map((s) => ({ team: teams[s - 1]?.id ?? null }));
+  if (positions) validateBracketSlots(teams, positions);
+  let slots: Slot[] = positions
+    ? positions.map((team) => ({ team }))
+    : seeds.map((s) => ({ team: teams[s - 1]?.id ?? null }));
   const matches: Match[] = [];
   let round = 1;
   while (slots.length > 1) {
@@ -655,12 +828,13 @@ export function createCompetition(
   const v = competitionInput.parse(input);
   const cid = id();
   const grouped = v.format.includes("group");
-  const teams = v.teamNames.map((name, i) => ({
+  let teams = v.teamNames.map((name, i) => ({
     id: id(),
     name,
     color: colors[i % colors.length],
     group: grouped ? String.fromCharCode(65 + (i % v.groups)) : null,
   }));
+  if (grouped) teams = drawGroups(teams, v.groups);
   let matches =
     v.format === "knockout"
       ? knockout(teams, v.thirdPlace)
@@ -1148,6 +1322,98 @@ export function applyCommand(
     };
     Object.assign(c, v);
     after = v;
+  } else if (type === "group_draw") {
+    if (c.status !== "draft" || !c.format.includes("group"))
+      throw new DomainError(
+        "Drawing grup hanya tersedia pada draft kompetisi grup",
+      );
+    if (
+      c.matches.some(
+        (match) =>
+          !["scheduled", "postponed"].includes(match.status) ||
+          match.homeScore !== 0 ||
+          match.awayScore !== 0 ||
+          !!match.goals?.length,
+      )
+    )
+      throw new DomainError(
+        "Drawing grup terkunci setelah pertandingan dimulai",
+      );
+    if (command.confirm !== true)
+      throw new DomainError(
+        "Konfirmasikan drawing grup dan pembuatan ulang jadwal draft",
+      );
+    const assignments = z
+      .array(z.object({ id: z.string(), group: z.string() }))
+      .parse(command.assignments);
+    const groups = Array.from({ length: c.rules.groups }, (_, i) =>
+      String.fromCharCode(65 + i),
+    );
+    if (
+      assignments.length !== c.teams.length ||
+      new Set(assignments.map((t) => t.id)).size !== c.teams.length ||
+      assignments.some(
+        (t) =>
+          !c.teams.some((old) => old.id === t.id) || !groups.includes(t.group),
+      )
+    )
+      throw new DomainError("Peserta atau grup drawing tidak valid");
+    const counts = groups.map(
+      (group) => assignments.filter((t) => t.group === group).length,
+    );
+    if (
+      counts.some(
+        (count) =>
+          count <
+          Math.max(
+            2,
+            c.format === "group_then_knockout" ? c.rules.qualifiers : 2,
+          ),
+      )
+    )
+      throw new DomainError(
+        "Setiap grup harus memenuhi jumlah minimal tim dan tim lolos",
+      );
+    before = { teams: c.teams, matches: c.matches };
+    c.teams = c.teams.map((team) => ({
+      ...team,
+      group: assignments.find((t) => t.id === team.id)!.group,
+    }));
+    c.matches = generateFixtures(c);
+    delete c.knockoutDrawing;
+    c.tieOrder = [];
+    after = { teams: c.teams, matches: c.matches };
+  } else if (type === "knockout_draw") {
+    if (!canDrawKnockout(c))
+      throw new DomainError(
+        "Bagan terkunci setelah pertandingan gugur dimulai atau kompetisi ditutup",
+      );
+    if (command.confirm !== true)
+      throw new DomainError("Konfirmasikan drawing bagan gugur");
+    const qualified = qualifiedTeams(c);
+    const slots = z.array(z.string().nullable()).parse(command.slots);
+    const avoidSameGroup = z
+      .boolean()
+      .parse(
+        command.avoidSameGroup ??
+          (c.format === "group_then_knockout" && c.rules.groups > 1),
+      );
+    validateBracketSlots(qualified, slots, avoidSameGroup);
+    const old = c.matches.filter((match) => match.stage === "knockout");
+    const groupMatches = c.matches.filter(
+      (match) => match.stage !== "knockout",
+    );
+    before = old;
+    const drawn = knockout(qualified, c.rules.thirdPlace, slots).map(
+      (match, index) => ({
+        ...match,
+        order: groupMatches.length + index,
+        scheduledAt: old[index]?.scheduledAt ?? null,
+      }),
+    );
+    c.matches = [...groupMatches, ...drawn];
+    c.knockoutDrawing = { slots, avoidSameGroup };
+    after = { slots, avoidSameGroup, matches: drawn };
   } else if (type === "teams") {
     if (c.status !== "draft")
       throw new DomainError("Tim terkunci setelah publikasi");
@@ -1217,6 +1483,7 @@ export function applyCommand(
     });
     if (changedSchedule) {
       c.matches = generateFixtures(c);
+      delete c.knockoutDrawing;
       c.tieOrder = [];
     }
     after = c.teams;
@@ -1257,6 +1524,7 @@ export function applyCommand(
       thirdPlace: v.thirdPlace,
     };
     c.matches = generateFixtures(c);
+    delete c.knockoutDrawing;
     c.tieOrder = [];
     after = c.rules;
   } else if (type === "transfer") {
@@ -1287,17 +1555,11 @@ export function applyCommand(
       throw new DomainError("Bracket tidak dapat dibuat ulang");
     if (c.matches.some((m) => m.status !== "final" && m.status !== "cancelled"))
       throw new DomainError("Selesaikan fase grup terlebih dahulu");
-    const qualified: Team[] = [];
-    for (let i = 0; i < c.rules.groups; i++) {
-      const rows = standings(c, String.fromCharCode(65 + i));
-      if (rows.slice(0, c.rules.qualifiers).some((r) => r.tied))
-        throw new DomainError(
-          "Peringkat seri perlu keputusan panitia terlebih dahulu",
-        );
-      qualified.push(...rows.slice(0, c.rules.qualifiers).map((r) => r.team));
-    }
+    const qualified = qualifiedTeams(c);
+    const slots = drawBracketSlots(qualified, c.rules.groups > 1);
+    c.knockoutDrawing = { slots, avoidSameGroup: c.rules.groups > 1 };
     c.matches.push(
-      ...knockout(qualified, c.rules.thirdPlace).map((m, i) => ({
+      ...knockout(qualified, c.rules.thirdPlace, slots).map((m, i) => ({
         ...m,
         order: c.matches.length + i,
       })),
