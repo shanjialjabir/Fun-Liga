@@ -75,8 +75,15 @@ test("spectator standings follow live goals, ranking changes and finalization wi
     timeout: 10000,
   });
   await expect(row(away).locator(".points")).toHaveText("1");
-  await expect(row(home).locator(".rank-tie")).toHaveText("=");
-  await expect(row(home).locator(".table-team")).not.toContainText("Seri");
+  await expect(row(home).locator(".standings-tie-label")).toHaveText("Seri");
+  const nameBox = await row(home).locator(".standings-team-name").boundingBox();
+  const tieBox = await row(home).locator(".standings-tie-label").boundingBox();
+  expect(tieBox!.x).toBeGreaterThanOrEqual(nameBox!.x + nameBox!.width);
+  expect(
+    Math.abs(
+      tieBox!.y + tieBox!.height / 2 - (nameBox!.y + nameBox!.height / 2),
+    ),
+  ).toBeLessThan(1);
   await spectator.screenshot({
     path: "test-results/standings-tied-mobile.png",
   });

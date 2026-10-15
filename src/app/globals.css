@@ -1986,8 +1986,15 @@ small {
   color: #e7e7e7;
   font-size: 12px;
 }
-.standings-team-name {
+.standings-team-identity {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   width: 144px;
+  min-width: 0;
+}
+.standings-team-name {
+  min-width: 0;
   white-space: normal;
   overflow-wrap: anywhere;
   line-height: 1.45;
@@ -2000,29 +2007,29 @@ small {
 }
 .standings-live-dot {
   display: inline-block;
-  width: 9px;
-  height: 9px;
-  flex: 0 0 9px;
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
   border-radius: 50%;
   background: #ff4545;
 }
 .standings-team-mark > .standings-live-dot {
   position: absolute;
-  top: -3px;
-  right: -3px;
-  width: 10px;
-  height: 10px;
-  border: 2px solid #242424;
+  top: -1px;
+  right: -1px;
+  width: 6px;
+  height: 6px;
+  border: 1.5px solid #242424;
   box-sizing: content-box;
 }
-.rank-tie {
-  position: absolute;
-  top: -3px;
-  right: -4px;
+.standings-tie-label {
+  flex: 0 0 auto;
   color: #ffab1a;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1;
+  font-size: 9px;
+  line-height: 1.4;
+  padding: 1px 4px;
+  border: 1px solid #ffab1a40;
+  border-radius: 3px;
 }
 .rank {
   position: relative;
@@ -4973,7 +4980,7 @@ small {
     gap: 9px;
     font-size: 12px;
   }
-  .standings-team-name {
+  .standings-team-identity {
     width: 124px;
   }
   .standings-table td {

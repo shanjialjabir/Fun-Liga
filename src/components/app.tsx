@@ -2242,7 +2242,7 @@ function CompetitionView({
               <Standings c={c} />
               <div className="panel-foot">
                 Urutan: poin → selisih gol → gol memasukkan → head-to-head →
-                keputusan panitia. Tanda = menunjukkan peringkat seri.
+                keputusan panitia. Label Seri menunjukkan peringkat yang sama.
               </div>
               {admin && c.format === "group_then_knockout" && (
                 <div className="panel-foot">
@@ -2642,18 +2642,11 @@ function Standings({
                   <tr key={r.team.id}>
                     <td>
                       <span
-                        title={r.tied ? "Peringkat seri" : undefined}
-                        aria-label={`Peringkat ${r.position}${r.tied ? ", peringkat seri" : ""}`}
                         className={
                           i === 0 && r.played && !r.tied ? "rank first" : "rank"
                         }
                       >
                         {r.position}
-                        {r.tied && (
-                          <small className="rank-tie" aria-hidden="true">
-                            =
-                          </small>
-                        )}
                       </span>
                     </td>
                     <td>
@@ -2674,8 +2667,18 @@ function Standings({
                             />
                           )}
                         </span>
-                        <span className="standings-team-name">
-                          {r.team.name}
+                        <span className="standings-team-identity">
+                          <span className="standings-team-name">
+                            {r.team.name}
+                          </span>
+                          {r.tied && (
+                            <small
+                              className="standings-tie-label"
+                              title="Peringkat seri"
+                            >
+                              Seri
+                            </small>
+                          )}
                         </span>
                       </div>
                     </td>
