@@ -1433,8 +1433,6 @@ export function applyCommand(
     c.knockoutDrawing = { slots, avoidSameGroup };
     after = { slots, avoidSameGroup, matches: drawn };
   } else if (type === "teams") {
-    if (c.status !== "draft")
-      throw new DomainError("Tim terkunci setelah publikasi");
     const v = z
       .array(
         z.object({
@@ -1484,6 +1482,10 @@ export function applyCommand(
       v.length !== c.teams.length ||
       v.some(
         (t) => !c.teams.some((old) => old.id === t.id && old.group === t.group),
+      );
+    if (changedSchedule && c.status !== "draft")
+      throw new DomainError(
+        "Setelah publikasi hanya nama tim yang dapat diubah; peserta dan grup terkunci",
       );
     if (changedSchedule && command.confirm !== true)
       throw new DomainError(

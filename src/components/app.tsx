@@ -3155,6 +3155,7 @@ function Teams({
 }) {
   const [edit, setEdit] = useState(false),
     [teams, setTeams] = useState(c.teams),
+    [editVersion, setEditVersion] = useState(c.version),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [preview, setPreview] = useState<Match[] | null>(null);
@@ -3169,6 +3170,7 @@ function Teams({
     try {
       await command({
         type: "teams",
+        version: editVersion,
         teams: teams.map(({ id, name, group }) => ({ id, name, group })),
         confirm: !!preview,
       });
@@ -3206,16 +3208,23 @@ function Teams({
           {admin && c.status === "draft" && (
             <GroupDrawing c={c} command={command} />
           )}
-          {admin && c.status === "draft" && (
+          {admin && (
             <button
               className="button secondary small"
+              disabled={busy}
               onClick={() => {
                 setTeams(c.teams);
+                setEditVersion(c.version);
                 setError("");
+                setPreview(null);
                 setEdit(!edit);
               }}
             >
-              {edit ? "Batal edit" : "Edit tim & grup"}
+              {edit
+                ? "Batal edit"
+                : c.status === "draft"
+                  ? "Edit tim & grup"
+                  : "Edit nama tim"}
             </button>
           )}
         </div>
@@ -3228,6 +3237,8 @@ function Teams({
               {edit ? (
                 <input
                   aria-label={`Edit nama tim ${i + 1}`}
+                  maxLength={60}
+                  disabled={busy}
                   value={t.name}
                   onChange={(e) =>
                     setTeams(
@@ -3241,7 +3252,7 @@ function Teams({
                 <h3>{t.name}</h3>
               )}
               {t.group &&
-                (edit ? (
+                (edit && c.status === "draft" ? (
                   <select
                     aria-label={`Grup ${t.name}`}
                     value={t.group}
@@ -3265,7 +3276,10 @@ function Teams({
                   <span className="muted">Grup {t.group}</span>
                 ))}
             </div>
-            {edit && c.format !== "fourfeo" && teams.length > 2 ? (
+            {edit &&
+            c.status === "draft" &&
+            c.format !== "fourfeo" &&
+            teams.length > 2 ? (
               <button
                 className="icon-button"
                 aria-label={`Hapus tim ${i + 1}`}
@@ -3282,32 +3296,35 @@ function Teams({
       {edit && (
         <div className="panel-foot">
           <div className="alert">
-            Nama baru mempertahankan jadwal. Perubahan peserta atau grup perlu
-            ditinjau dan membuat ulang jadwal draft.
+            {c.status === "draft"
+              ? "Nama baru mempertahankan jadwal. Perubahan peserta atau grup perlu ditinjau dan membuat ulang jadwal draft."
+              : "Nama baru otomatis tampil di jadwal, klasemen, dan statistik pemain. Skor serta riwayat pertandingan tetap tersimpan."}
           </div>
           {error && <div className="alert error">{error}</div>}
-          {c.format !== "fourfeo" && teams.length < 32 && (
-            <button
-              className="button secondary"
-              onClick={() =>
-                setTeams([
-                  ...teams,
-                  {
-                    id: `new-${crypto.randomUUID()}`,
-                    name: "",
-                    color: ACCENT_COLOR,
-                    group: c.format.includes("group")
-                      ? String.fromCharCode(
-                          65 + (teams.length % c.rules.groups),
-                        )
-                      : null,
-                  },
-                ])
-              }
-            >
-              <Plus size={16} /> Tambah tim
-            </button>
-          )}
+          {c.status === "draft" &&
+            c.format !== "fourfeo" &&
+            teams.length < 32 && (
+              <button
+                className="button secondary"
+                onClick={() =>
+                  setTeams([
+                    ...teams,
+                    {
+                      id: `new-${crypto.randomUUID()}`,
+                      name: "",
+                      color: ACCENT_COLOR,
+                      group: c.format.includes("group")
+                        ? String.fromCharCode(
+                            65 + (teams.length % c.rules.groups),
+                          )
+                        : null,
+                    },
+                  ])
+                }
+              >
+                <Plus size={16} /> Tambah tim
+              </button>
+            )}
           <button className="button primary" disabled={busy} onClick={review}>
             {busy
               ? "Menyimpan…"

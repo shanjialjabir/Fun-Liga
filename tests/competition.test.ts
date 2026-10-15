@@ -7,6 +7,7 @@ import {
   prioritizeRest,
   canView,
   roleFor,
+  playerStatistics,
 } from "../src/lib/competition";
 const owner = { id: crypto.randomUUID(), email: "owner@example.test" };
 const operator = { id: crypto.randomUUID(), email: "operator@example.test" };
@@ -501,6 +502,92 @@ describe("Ranking edge cases and draft stability", () => {
       })),
     });
     expect(out.matches.map((m) => m.id)).toEqual(c.matches.map((m) => m.id));
+  });
+  it("renames a LIVE team without changing goals, players, fixtures or tie ordering", () => {
+    let c = publish(competition({ format: "group_stage" }));
+    const match = c.matches[0];
+    c = cmd(c, {
+      type: "goal_add",
+      matchId: match.id,
+      matchVersion: match.version,
+      teamId: match.home,
+      scorerName: "Andi",
+      assistName: "Budi",
+    });
+    c.tieOrder = c.teams.map((t) => t.id);
+    const renamed = c.teams.find((t) => t.id === match.home)!;
+    const out = cmd(c, {
+      type: "teams",
+      teams: c.teams.map((t) => ({
+        ...t,
+        name: t.id === renamed.id ? "  Nama baru FC  " : t.name,
+      })),
+    });
+    expect(out.teams.find((t) => t.id === renamed.id)).toEqual({
+      ...renamed,
+      name: "Nama baru FC",
+    });
+    expect(out.matches).toEqual(c.matches);
+    expect(out.players).toEqual(c.players);
+    expect(out.tieOrder).toEqual(c.tieOrder);
+    expect(out.status).toBe("in_progress");
+    expect(
+      standings(out, renamed.group!).find((r) => r.team.id === renamed.id)?.team
+        .name,
+    ).toBe("Nama baru FC");
+    expect(playerStatistics(out)).toEqual(playerStatistics(c));
+    expect(out.audit.at(-1)).toMatchObject({
+      event: "teams",
+      before: c.teams,
+      after: out.teams,
+    });
+    expect(c.teams.find((t) => t.id === renamed.id)?.name).toBe(renamed.name);
+  });
+  it("keeps published participant IDs and groups locked even with regeneration confirmation", () => {
+    const c = publish(competition({ format: "group_stage" }));
+    const teams = c.teams.map((t) => ({ ...t }));
+    const swapped = teams.map((t) => ({
+      ...t,
+      group: t.group === "A" ? "B" : "A",
+    }));
+    const replaced = teams.map((t, i) =>
+      i === 0 ? { ...t, id: "new-replacement" } : t,
+    );
+    const added = [...teams, { ...teams[0], id: "new-extra", name: "Extra" }];
+    for (const submitted of [swapped, replaced, added, teams.slice(1)]) {
+      expect(() =>
+        cmd(c, { type: "teams", teams: submitted, confirm: true }),
+      ).toThrow();
+    }
+    expect(c.matches.every((m) => m.homeScore === 0 && m.awayScore === 0)).toBe(
+      true,
+    );
+  });
+  it("rejects duplicate/empty names and stale renames after publication", () => {
+    const c = publish();
+    for (const name of [
+      "",
+      " ",
+      c.teams[1].name.toUpperCase(),
+      "x".repeat(61),
+    ]) {
+      expect(() =>
+        cmd(c, {
+          type: "teams",
+          teams: c.teams.map((t, i) => ({
+            ...t,
+            name: i === 0 ? name : t.name,
+          })),
+        }),
+      ).toThrow();
+    }
+    expect(() =>
+      applyCommand(c, owner, {
+        type: "teams",
+        teams: c.teams,
+        version: c.version - 1,
+      }),
+    ).toThrow();
   });
 });
 
