@@ -109,7 +109,7 @@ test("tap match, autocomplete scorer and assist, own goal, edit/delete, final st
     .poll(async () => (await snapshot()).matches[0].status)
     .toBe("final");
   await page.getByRole("button", { name: "Tutup dialog" }).click();
-  await page.goto(`/dashboard/competitions/${c.id}/players`);
+  await page.goto(`/dashboard/competitions/${c.id}/standings`);
   await expect(
     page.getByRole("heading", { name: "Top skor", exact: true }),
   ).toBeVisible();
@@ -176,7 +176,7 @@ test("tap match, autocomplete scorer and assist, own goal, edit/delete, final st
       path: "test-results/goal-details-spectator-mobile.png",
     });
     await visitor.getByRole("button", { name: "Tutup dialog" }).click();
-    await visitor.goto(`/c/${c.slug}/players`);
+    await visitor.goto(`/c/${c.slug}/standings`);
     await expect(
       visitor
         .locator(".player-leader-panel")

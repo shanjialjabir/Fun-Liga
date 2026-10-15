@@ -1700,18 +1700,21 @@ function CompetitionView({
     (m) => m.status === "scheduled" && m.home && m.away,
   );
   const activeTab =
-    tab === "matches" ? "control" : tab === "schedule" ? "fixtures" : tab;
+    tab === "matches"
+      ? "control"
+      : tab === "schedule"
+        ? "fixtures"
+        : tab === "players"
+          ? "standings"
+          : tab;
   const tabs = [
     { key: "overview", label: "Ringkasan", icon: LayoutDashboard },
     { key: "fixtures", label: "Jadwal & hasil", icon: CalendarDays },
-    ...(c.rules.ranking && c.format !== "knockout"
-      ? [{ key: "standings", label: "Klasemen", icon: ListOrdered }]
-      : []),
+    { key: "standings", label: "Klasemen", icon: ListOrdered },
     ...(c.format.includes("knockout")
       ? [{ key: "bracket", label: "Bracket", icon: Swords }]
       : []),
     { key: "teams", label: "Tim", icon: Shield },
-    { key: "players", label: "Top skor & assist", icon: Trophy },
     ...(edit
       ? [{ key: "control", label: "Kontrol skor", icon: Activity }]
       : []),
@@ -2215,39 +2218,40 @@ function CompetitionView({
             Posisi selama pertandingan berlangsung masih sementara.
           </div>
         </section>
-      ) : activeTab === "players" ? (
-        <section className="panel">
-          <PlayerLeaders c={c} />
-        </section>
       ) : activeTab === "standings" ? (
-        <section className="panel">
-          <div className="panel-heading">
-            <div>
-              <h2>Klasemen</h2>
-              <p>
-                Skor live dan hasil final dihitung otomatis. Posisi selama
-                pertandingan berlangsung masih sementara.
-              </p>
-            </div>
-            {admin && (
-              <button
-                className="button secondary small"
-                onClick={() => setTieOpen(true)}
-              >
-                Resolusi seri
-              </button>
-            )}
-          </div>
-          <Standings c={c} />
-          <div className="panel-foot">
-            Urutan: poin → selisih gol → gol memasukkan → head-to-head →
-            keputusan panitia. Peringkat seri ditandai.
-          </div>
-          {admin && c.format === "group_then_knockout" && (
-            <div className="panel-foot">
-              <KnockoutDrawing c={c} command={command} />
-            </div>
+        <section className="panel standings-panel">
+          {c.rules.ranking && c.format !== "knockout" && (
+            <>
+              <div className="panel-heading">
+                <div>
+                  <h2>Klasemen</h2>
+                  <p>
+                    Skor live dan hasil final dihitung otomatis. Posisi selama
+                    pertandingan berlangsung masih sementara.
+                  </p>
+                </div>
+                {admin && (
+                  <button
+                    className="button secondary small"
+                    onClick={() => setTieOpen(true)}
+                  >
+                    Resolusi seri
+                  </button>
+                )}
+              </div>
+              <Standings c={c} />
+              <div className="panel-foot">
+                Urutan: poin → selisih gol → gol memasukkan → head-to-head →
+                keputusan panitia. Peringkat seri ditandai.
+              </div>
+              {admin && c.format === "group_then_knockout" && (
+                <div className="panel-foot">
+                  <KnockoutDrawing c={c} command={command} />
+                </div>
+              )}
+            </>
           )}
+          <PlayerLeaders c={c} />
         </section>
       ) : activeTab === "bracket" ? (
         <section className="panel">

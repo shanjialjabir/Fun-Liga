@@ -581,53 +581,82 @@ export function PlayerLeaders({ c }: { c: Competition }) {
       0,
     );
   return (
-    <section className="player-leaders">
-      <h2>Statistik pemain</h2>
-      <p>
-        Gol dan assist dari pertandingan LIVE dan final diperbarui otomatis. Gol
-        bunuh diri dan adu penalti tidak dihitung.
+    <section className="player-leaders" aria-label="Top skor dan assist">
+      <div className="player-leaders-heading">
+        <div>
+          <h2>Top skor & assist</h2>
+          <p>Diperbarui mengikuti skor pertandingan.</p>
+        </div>
+        {c.matches.some((match) => match.status === "live") && (
+          <span className="player-leaders-live" role="status">
+            LIVE · Statistik pemain sementara
+          </span>
+        )}
+      </div>
+      <div className="player-leaders-grid">
+        {(["goals", "assists"] as const).map((metric) => {
+          const ranked = rows
+            .filter((player) => player[metric] > 0)
+            .sort(
+              (a, b) => b[metric] - a[metric] || a.name.localeCompare(b.name),
+            );
+          return (
+            <section
+              className="player-leader-panel"
+              key={metric}
+              aria-label={
+                metric === "goals" ? "Daftar top skor" : "Daftar top assist"
+              }
+            >
+              <div className="player-leader-heading">
+                <h3>{metric === "goals" ? "Top skor" : "Top assist"}</h3>
+                <span>{metric === "goals" ? "Gol" : "Assist"}</span>
+              </div>
+              {ranked.length ? (
+                <ol className="player-leader-list">
+                  {ranked.map((player) => (
+                    <li className="player-leader-row" key={player.id}>
+                      <span className="player-leader-rank">
+                        {ranked.findIndex(
+                          (other) => other[metric] === player[metric],
+                        ) + 1}
+                      </span>
+                      <div>
+                        <b>{player.name}</b>
+                        <small>
+                          {
+                            c.teams.find((team) => team.id === player.teamId)
+                              ?.name
+                          }
+                        </small>
+                      </div>
+                      <strong
+                        aria-label={`${player[metric]} ${metric === "goals" ? "gol" : "assist"}`}
+                      >
+                        {player[metric]}
+                      </strong>
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <p className="player-leader-empty">
+                  Belum ada {metric === "goals" ? "pencetak gol" : "assist"}{" "}
+                  yang dicatat.
+                </p>
+              )}
+            </section>
+          );
+        })}
+      </div>
+      <p className="player-leaders-note">
+        Gol bunuh diri dan adu penalti tidak masuk statistik pemain.
       </p>
-      {c.matches.some((match) => match.status === "live") && (
-        <p className="standings-live" role="status">
-          LIVE · Statistik pemain sementara
-        </p>
-      )}
       {missing > 0 && (
         <p className="legacy-goals-note">
           {missing} gol belum memiliki nama pencetak gol; daftar ini belum
           mencakup gol tersebut.
         </p>
       )}
-      <div className="two-cols">
-        {(["goals", "assists"] as const).map((metric) => (
-          <div className="player-leader-panel" key={metric}>
-            <h3>{metric === "goals" ? "Top skor" : "Top assist"}</h3>
-            {rows
-              .filter((p) => p[metric] > 0)
-              .sort(
-                (a, b) => b[metric] - a[metric] || a.name.localeCompare(b.name),
-              )
-              .map((p, index) => (
-                <div className="player-leader-row" key={p.id}>
-                  <span>{index + 1}</span>
-                  <div>
-                    <b>{p.name}</b>
-                    <small>
-                      {c.teams.find((t) => t.id === p.teamId)?.name}
-                    </small>
-                  </div>
-                  <strong>{p[metric]}</strong>
-                </div>
-              ))}
-            {!rows.some((p) => p[metric] > 0) && (
-              <p>
-                Belum ada {metric === "goals" ? "gol" : "assist"} dengan nama
-                pemain yang dicatat.
-              </p>
-            )}
-          </div>
-        ))}
-      </div>
     </section>
   );
 }

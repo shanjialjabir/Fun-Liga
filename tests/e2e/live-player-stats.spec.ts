@@ -31,7 +31,14 @@ test("optional scorer, anonymous goal, live scorer/assist updates, edit and dele
     viewport: { width: 390, height: 844 },
   });
   const viewer = await context.newPage();
-  await viewer.goto(`/c/${c.slug}/players`);
+  await viewer.goto(`/c/${c.slug}/standings`);
+  await expect(viewer.locator(".standings-table")).toBeVisible();
+  await expect(
+    viewer.getByRole("heading", { name: "Top skor & assist", exact: true }),
+  ).toBeVisible();
+  await expect(
+    viewer.getByRole("link", { name: "Top skor & assist", exact: true }),
+  ).toHaveCount(0);
   await page.goto(`/dashboard/competitions/${c.id}/fixtures`);
   await page.locator(".fixture-row").first().locator(".fixture-score").click();
   await page.getByRole("button", { name: `Gol ${home}`, exact: true }).click();
@@ -78,6 +85,7 @@ test("optional scorer, anonymous goal, live scorer/assist updates, edit and dele
   );
   c = await (await page.request.get(path)).json();
   expect(c.matches[0].homeScore).toBe(1);
+  await viewer.locator(".player-leaders").scrollIntoViewIfNeeded();
   await viewer.screenshot({
     path: "test-results/live-player-statistics-mobile.png",
   });
@@ -108,5 +116,12 @@ test("optional scorer, anonymous goal, live scorer/assist updates, edit and dele
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
+  await viewer.goto(`/c/${c.slug}/players`);
+  await expect(
+    viewer.getByRole("heading", { name: "Top skor & assist", exact: true }),
+  ).toBeVisible();
+  await expect(
+    viewer.getByRole("link", { name: "Klasemen", exact: true }),
+  ).toHaveClass(/active/);
   await context.close();
 });
