@@ -2226,8 +2226,8 @@ function CompetitionView({
                 <div>
                   <h2>Klasemen</h2>
                   <p>
-                    Skor live dan hasil final dihitung otomatis. Posisi selama
-                    pertandingan berlangsung masih sementara.
+                    Skor diperbarui otomatis. Posisi selama pertandingan
+                    berlangsung masih sementara.
                   </p>
                 </div>
                 {admin && (
@@ -2242,7 +2242,7 @@ function CompetitionView({
               <Standings c={c} />
               <div className="panel-foot">
                 Urutan: poin → selisih gol → gol memasukkan → head-to-head →
-                keputusan panitia. Peringkat seri ditandai.
+                keputusan panitia. Tanda = menunjukkan peringkat seri.
               </div>
               {admin && c.format === "group_then_knockout" && (
                 <div className="panel-foot">
@@ -2608,10 +2608,16 @@ function Standings({
               (!g || m.group === g),
           ) && (
             <p className="standings-live" role="status">
-              LIVE · Klasemen sementara
+              <span className="standings-live-dot" aria-hidden="true" />
+              Klasemen sementara
             </p>
           )}
-          <div className="table-scroll">
+          <div
+            className="table-scroll standings-scroll"
+            tabIndex={0}
+            role="region"
+            aria-label={g ? `Klasemen grup ${g}` : "Tabel klasemen"}
+          >
             <table className="standings-table">
               <thead>
                 <tr>
@@ -2636,25 +2642,40 @@ function Standings({
                   <tr key={r.team.id}>
                     <td>
                       <span
+                        title={r.tied ? "Peringkat seri" : undefined}
+                        aria-label={`Peringkat ${r.position}${r.tied ? ", peringkat seri" : ""}`}
                         className={
                           i === 0 && r.played && !r.tied ? "rank first" : "rank"
                         }
                       >
                         {r.position}
+                        {r.tied && (
+                          <small className="rank-tie" aria-hidden="true">
+                            =
+                          </small>
+                        )}
                       </span>
                     </td>
                     <td>
                       <div className="table-team">
-                        <TeamMark team={r.team} size={29} />
-                        <span>
-                          {r.team.name}
+                        <span className="standings-team-mark">
+                          <TeamMark team={r.team} size={29} />
                           {c.matches.some(
                             (m) =>
                               m.stage !== "knockout" &&
                               m.status === "live" &&
                               (m.home === r.team.id || m.away === r.team.id),
-                          ) && <small className="standings-live">LIVE</small>}
-                          {r.tied && <small className="tie-label">Seri</small>}
+                          ) && (
+                            <span
+                              className="standings-live-dot"
+                              role="img"
+                              aria-label="Sedang bermain"
+                              title="Pertandingan berlangsung"
+                            />
+                          )}
+                        </span>
+                        <span className="standings-team-name">
+                          {r.team.name}
                         </span>
                       </div>
                     </td>
@@ -2680,6 +2701,9 @@ function Standings({
               </tbody>
             </table>
           </div>
+          <p className="standings-scroll-hint">
+            Geser tabel untuk melihat statistik →
+          </p>
         </div>
       ))}
     </>

@@ -107,7 +107,7 @@ test("owner creates Fourfeo; operator and spectator permissions, scoring, confli
   });
   await expect(visitor.locator(".points")).toHaveText(["3", "0", "0", "0"]);
   await expect(
-    visitor.getByText("LIVE · Klasemen sementara", { exact: true }),
+    visitor.getByRole("status").filter({ hasText: "Klasemen sementara" }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Tinjau hasil final" }).click();
   await page.getByRole("button", { name: "Konfirmasi & simpan" }).click();

@@ -13,7 +13,12 @@ test("spectator standings follow live goals, ranking changes and finalization wi
         format: "league",
         meetings: 1,
         visibility: "public",
-        teamNames: ["Live A", "Live B", "Live C", "Live D"],
+        teamNames: [
+          "Garuda Nusantara Football Club",
+          "Biru FC",
+          "Mocca FC",
+          "Peach FC",
+        ],
       },
     })
   ).json();
@@ -56,13 +61,56 @@ test("spectator standings follow live goals, ranking changes and finalization wi
     timeout: 10000,
   });
   await expect(
-    spectator.getByText("LIVE · Klasemen sementara", { exact: true }),
+    spectator.getByText("Klasemen sementara", { exact: true }),
   ).toBeVisible();
+  await expect(
+    row(home).getByRole("img", { name: "Sedang bermain" }),
+  ).toHaveCount(1);
+  await expect(
+    row(away).getByRole("img", { name: "Sedang bermain" }),
+  ).toHaveCount(1);
+  await expect(row(home)).not.toContainText("LIVE");
   await goal("away");
   await expect(row(home).locator(".points")).toHaveText("1", {
     timeout: 10000,
   });
   await expect(row(away).locator(".points")).toHaveText("1");
+  await expect(row(home).locator(".rank-tie")).toHaveText("=");
+  await expect(row(home).locator(".table-team")).not.toContainText("Seri");
+  await spectator.screenshot({
+    path: "test-results/standings-tied-mobile.png",
+  });
+  for (const width of [320, 390]) {
+    await spectator.setViewportSize({ width, height: 844 });
+    const name = row(home).locator(".standings-team-name");
+    const before = await name.boundingBox();
+    const scroll = spectator.locator(".standings-scroll");
+    await scroll.evaluate((el) => {
+      el.scrollLeft = el.scrollWidth;
+    });
+    await expect
+      .poll(async () => (await name.boundingBox())?.x)
+      .toBe(before?.x);
+    expect(await scroll.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0);
+    const point = await row(home).locator(".points").boundingBox();
+    expect(point!.x + point!.width).toBeLessThanOrEqual(width);
+    expect(
+      await spectator.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    await spectator.screenshot({
+      path: `test-results/standings-scroll-${width}.png`,
+    });
+    await scroll.evaluate((el) => {
+      el.scrollLeft = 0;
+    });
+  }
+  await spectator.setViewportSize({ width: 1440, height: 1000 });
+  await spectator.screenshot({
+    path: "test-results/standings-tied-desktop.png",
+  });
+  await spectator.setViewportSize({ width: 390, height: 844 });
   await goal("away");
   await expect(row(away).locator(".points")).toHaveText("3", {
     timeout: 10000,
@@ -83,8 +131,11 @@ test("spectator standings follow live goals, ranking changes and finalization wi
     confirm: true,
   });
   await expect(
-    spectator.getByText("LIVE · Klasemen sementara", { exact: true }),
+    spectator.getByText("Klasemen sementara", { exact: true }),
   ).toHaveCount(0, { timeout: 10000 });
+  await expect(
+    spectator.getByRole("img", { name: "Sedang bermain" }),
+  ).toHaveCount(0);
   await expect(row(away).locator(".points")).toHaveText("3");
   await expect(row(away).locator("td").nth(2)).toHaveText("1");
   expect(
