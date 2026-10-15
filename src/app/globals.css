@@ -1948,7 +1948,7 @@ small {
   border-collapse: separate;
   border-spacing: 0;
   width: 100%;
-  min-width: 620px;
+  min-width: 560px;
   white-space: nowrap;
   font-size: 12px;
   text-align: center;
@@ -1959,10 +1959,10 @@ small {
   color: #a7a7a7;
   letter-spacing: 0.6px;
   background: #212121;
-  padding: 16px 13px;
+  padding: 16px 10px;
 }
 .standings-table td {
-  padding: 15px 13px;
+  padding: 15px 10px;
   border-top: 1px solid #3f3f3f;
   color: #bfbfbf;
 }
@@ -4953,21 +4953,31 @@ small {
   .topbar-right {
     flex-shrink: 0;
   }
+  .standings-table {
+    min-width: 480px;
+  }
+  .standings-table th,
+  .standings-table td {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
   .standings-table th:first-child,
   .standings-table td:first-child {
     position: sticky;
     left: 0;
     z-index: 2;
+    width: 40px;
+    min-width: 40px;
     padding-left: 8px;
     padding-right: 8px;
   }
   .standings-table th:nth-child(2),
   .standings-table td:nth-child(2) {
     position: sticky;
-    left: 44px;
+    left: 40px;
     z-index: 2;
-    width: 184px;
-    min-width: 184px;
+    width: 166px;
+    min-width: 166px;
     padding-left: 10px;
     padding-right: 10px;
     border-right: 1px solid #3f3f3f;
@@ -4980,7 +4990,7 @@ small {
     font-size: 12px;
   }
   .standings-team-identity {
-    width: 124px;
+    width: 106px;
   }
   .standings-table td {
     font-size: 12px;
