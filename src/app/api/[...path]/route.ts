@@ -10,6 +10,7 @@ import {
 } from "@/lib/competition";
 import {
   currentUser,
+  committeeToken,
   demoMode,
   demoLogin,
   demoLogout,
@@ -31,11 +32,24 @@ import { isMainAdmin } from "@/lib/access";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 function safe(c: Competition, userId?: string) {
-  const committeeLinks = c.committeeLinks?.map(
-    ({ id, label, role, expiresAt }) => ({ id, label, role, expiresAt }),
-  );
+  const committeeLinks = c.committeeLinks?.map(({ id, label, role }) => ({
+    id,
+    label,
+    role,
+    expiresAt: null,
+  }));
   if (roleFor(c, userId)) return { ...c, committeeLinks };
   return { ...c, ownerId: "", members: [], audit: [], committeeLinks: [] };
+}
+function setCommitteeCookie(response: NextResponse, token: string, url: URL) {
+  // Browser storage has a finite lifetime; the invitation itself never expires.
+  response.cookies.set("fms_committee", token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: url.protocol === "https:",
+    maxAge: 365 * 24 * 3600,
+    path: "/",
+  });
 }
 async function dispatch(
   request: Request,
@@ -55,8 +69,12 @@ async function dispatch(
       if (Number(request.headers.get("content-length") || 0) > 512000)
         throw new DomainError("Permintaan terlalu besar", 413);
     }
-    if (path[0] === "session" && method === "GET")
-      return NextResponse.json({ user, demo: demoMode });
+    if (path[0] === "session" && method === "GET") {
+      const response = NextResponse.json({ user, demo: demoMode });
+      const token = committeeToken(request);
+      if (user?.guest && token) setCommitteeCookie(response, token, url);
+      return response;
+    }
     if (path[0] === "admin" && path[1] === "accounts" && path.length === 2) {
       if (!user) throw new DomainError("Silakan masuk terlebih dahulu", 401);
       if (!isMainAdmin(user.email))
@@ -148,16 +166,7 @@ async function dispatch(
           },
         },
       );
-      response.cookies.set("fms_committee", token, {
-        httpOnly: true,
-        sameSite: "lax",
-        secure: url.protocol === "https:",
-        maxAge: Math.max(
-          1,
-          Math.floor((access.link.expiresAt - Date.now()) / 1000),
-        ),
-        path: "/",
-      });
+      setCommitteeCookie(response, token, url);
       return response;
     }
     if (path[0] === "invite" && method === "POST") {

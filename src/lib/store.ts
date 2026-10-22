@@ -46,15 +46,18 @@ export type User = {
   competitionId?: string;
   competitionName?: string;
   role?: "admin" | "score_operator";
-  expiresAt?: number;
+  expiresAt?: number | null;
 };
-export async function currentUser(request: Request): Promise<User | null> {
-  const guestToken = request.headers
+export function committeeToken(request: Request) {
+  return request.headers
     .get("cookie")
     ?.split(";")
     .map((value) => value.trim())
     .find((value) => value.startsWith("fms_committee="))
     ?.slice(14);
+}
+export async function currentUser(request: Request): Promise<User | null> {
+  const guestToken = committeeToken(request);
   if (guestToken) {
     const access = await findCommitteeAccess(guestToken);
     if (access) return access.user;
@@ -259,9 +262,7 @@ export async function findCommitteeAccess(token: string) {
     if (error) throw new DomainError("Gagal memeriksa akses panitia", 503);
     c = data?.data ?? null;
   }
-  const link = c?.committeeLinks?.find(
-    (link) => link.tokenHash === tokenHash && link.expiresAt > Date.now(),
-  );
+  const link = c?.committeeLinks?.find((link) => link.tokenHash === tokenHash);
   if (!c || !link) return null;
   return {
     competition: c,
@@ -274,7 +275,7 @@ export async function findCommitteeAccess(token: string) {
       competitionId: c.id,
       competitionName: c.name,
       role: link.role,
-      expiresAt: link.expiresAt,
+      expiresAt: null,
     },
   };
 }
@@ -294,7 +295,7 @@ export async function createCommitteeLink(
       (role === "admin"
         ? "Admin melalui tautan"
         : "Operator skor melalui tautan"),
-    expiresAt: Date.now() + 72 * 3600000,
+    expiresAt: null,
   };
   const updated = structuredClone(c);
   updated.committeeLinks ??= [];
@@ -320,7 +321,7 @@ export async function createCommitteeLink(
 export async function openCommitteeLink(token: string) {
   const existing = await findCommitteeAccess(token);
   if (existing) return existing;
-  // Unused legacy invitations retain their original expiration but now allow account-free access.
+  // Legacy account invitations must still be valid to activate. Activated access lasts until revoked.
   const tokenHash = hash(token);
   let invite:
     | {
@@ -360,7 +361,7 @@ export async function openCommitteeLink(token: string) {
       invite.role === "admin"
         ? "Admin melalui tautan"
         : "Operator skor melalui tautan",
-    expiresAt: Number(invite.expires_at),
+    expiresAt: null,
   };
   c.committeeLinks ??= [];
   c.committeeLinks.push(link);

@@ -88,7 +88,8 @@ export type Competition = {
     tokenHash?: string;
     role: "admin" | "score_operator";
     label: string;
-    expiresAt: number;
+    // Legacy timestamps are retained for compatibility; access lasts until revoked.
+    expiresAt?: number | null;
   }[];
   matches: Match[];
   rules: {
@@ -1082,9 +1083,7 @@ export function roleFor(
   userId: string | undefined,
 ): Role | undefined {
   if (userId?.startsWith("link:"))
-    return c.committeeLinks?.find(
-      (link) => link.id === userId.slice(5) && link.expiresAt > Date.now(),
-    )?.role;
+    return c.committeeLinks?.find((link) => link.id === userId.slice(5))?.role;
   return c.members.find((m) => m.userId === userId)?.role;
 }
 export function canView(c: Competition, userId?: string) {

@@ -39,12 +39,13 @@ describe("Server persistence for account-free committee sessions", () => {
   it("opens a reusable grant in multiple independent sessions without creating any account or membership", async () => {
     const c = await create();
     const before = await store.listManagedAccounts();
-    const { token } = await store.createCommitteeLink(
+    const { token, expiresAt } = await store.createCommitteeLink(
       c,
       owner,
       "score_operator",
       "Operator lapangan",
     );
+    expect(expiresAt).toBeNull();
     const first = await store.openCommitteeLink(token);
     const second = await store.openCommitteeLink(token);
     expect(first.user).toEqual(second.user);
@@ -76,7 +77,7 @@ describe("Server persistence for account-free committee sessions", () => {
         .accepted_at,
     ).toBeTruthy();
   });
-  it("revocation and expiration invalidate cookies and prevent opening the link again", async () => {
+  it("old expiry timestamps do not limit access, and revocation still invalidates cookies and reopening", async () => {
     const c = await create();
     const { token } = await store.createCommitteeLink(
       c,
@@ -104,10 +105,19 @@ describe("Server persistence for account-free committee sessions", () => {
     fresh.committeeLinks![0].expiresAt = Date.now() - 1;
     fresh.version++;
     await store.saveCompetition(fresh, previous);
-    expect(await store.currentUser(request(another.token))).toBeNull();
-    await expect(store.openCommitteeLink(another.token)).rejects.toThrow(
-      "kedaluwarsa",
-    );
+    const future = vi
+      .spyOn(Date, "now")
+      .mockReturnValue(Date.now() + 10 * 365 * 24 * 3600000);
+    try {
+      expect((await store.currentUser(request(another.token)))?.role).toBe(
+        "admin",
+      );
+      expect(
+        (await store.openCommitteeLink(another.token)).user.expiresAt,
+      ).toBeNull();
+    } finally {
+      future.mockRestore();
+    }
   });
   it("never reactivates a converted legacy invitation after the access is revoked", async () => {
     const c = await create();

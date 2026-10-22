@@ -50,6 +50,8 @@ test("any recipient opens an invitation without an account; shared role, score e
   await expect(
     page.getByText("Operator lapangan 1", { exact: true }),
   ).toBeVisible();
+  await expect(page.getByText(/Berlaku sampai akses dicabut/)).toBeVisible();
+  await expect(page.getByText(/72 jam/)).toHaveCount(0);
   c = await (await page.request.get(path)).json();
   expect(JSON.stringify(c)).not.toContain("tokenHash");
   const first = await browser.newContext({
@@ -68,10 +70,25 @@ test("any recipient opens an invitation without an account; shared role, score e
     competitionId: c.id,
     role: "score_operator",
     name: "Operator lapangan 1",
+    expiresAt: null,
   });
   expect(
     (await first.cookies()).find((cookie) => cookie.name === "fms_committee"),
   ).toMatchObject({ httpOnly: true, sameSite: "Lax" });
+  expect(
+    (await first.cookies()).find((cookie) => cookie.name === "fms_committee")!
+      .expires,
+  ).toBeGreaterThan(Date.now() / 1000 + 300 * 86400);
+  // Existing short-lived browser cookies are renewed after resolving a valid grant.
+  const cookie = (await first.cookies()).find(
+    (cookie) => cookie.name === "fms_committee",
+  )!;
+  await first.addCookies([{ ...cookie, expires: Date.now() / 1000 + 60 }]);
+  await first.request.get("/api/session");
+  expect(
+    (await first.cookies()).find((cookie) => cookie.name === "fms_committee")!
+      .expires,
+  ).toBeGreaterThan(Date.now() / 1000 + 300 * 86400);
   await expect(
     guest.getByRole("link", { name: "Panitia", exact: true }),
   ).toHaveCount(0);

@@ -42,11 +42,13 @@ describe("Account-free committee capabilities", () => {
     expect(roleFor(c, c.committeeLinks![0].id)).toBeUndefined();
     expect(canView(setup(), op)).toBe(false);
   });
-  it("expired or removed links no longer authorize any action", () => {
+  it("legacy expiration no longer limits access, while revocation still removes it", () => {
     const c = setup();
     const id = `link:${c.committeeLinks![0].id}`;
     c.committeeLinks![0].expiresAt = Date.now() - 1;
-    expect(roleFor(c, id)).toBeUndefined();
+    expect(roleFor(c, id)).toBe("score_operator");
+    expect(canView(c, id)).toBe(true);
+    c.committeeLinks = [];
     expect(() =>
       applyCommand(
         c,

@@ -73,7 +73,7 @@ type User = {
   competitionId?: string;
   competitionName?: string;
   role?: "admin" | "score_operator";
-  expiresAt?: number;
+  expiresAt?: number | null;
 };
 const formatIcons = {
   fourfeo: Zap,
@@ -95,7 +95,6 @@ const time = (value: string) =>
     minute: "2-digit",
     timeZone: "Asia/Jakarta",
   }).format(new Date(value));
-const dateTime = (value: string) => `${date(value)}, ${time(value)} WIB`;
 const memberLabels: Record<Role, string> = {
   owner: "Owner",
   admin: "Admin",
@@ -3506,10 +3505,7 @@ function Members({
         <div className="panel-heading">
           <h2>Panitia kompetisi</h2>
           <span className="muted">
-            {c.members.length} akun ·{" "}
-            {c.committeeLinks?.filter((access) => access.expiresAt > now)
-              .length ?? 0}{" "}
-            tautan
+            {c.members.length} akun · {c.committeeLinks?.length ?? 0} tautan
           </span>
         </div>
         <div className="member-list">
@@ -3556,10 +3552,7 @@ function Members({
             <div>
               <b>{access.label}</b>
               <small>
-                {memberLabels[access.role]} ·{" "}
-                {access.expiresAt > now
-                  ? `berlaku sampai ${dateTime(new Date(access.expiresAt).toISOString())}`
-                  : "Kedaluwarsa"}
+                {memberLabels[access.role]} · Berlaku sampai akses dicabut
               </small>
               <small>Tanpa akun · dapat digunakan beberapa panitia</small>
             </div>
@@ -3632,8 +3625,8 @@ function Members({
         <h2>Undang rekan panitia</h2>
         <p className="muted">
           Siapa pun yang membuka tautan langsung mendapat akses sesuai peran,
-          tanpa daftar atau login. Berlaku 72 jam dan bisa digunakan kembali
-          sampai kedaluwarsa atau dicabut.
+          tanpa daftar atau login. Tautan bisa digunakan kembali tanpa batas
+          waktu sampai akses dicabut.
         </p>
         <div className="form-stack">
           <label>
@@ -4060,11 +4053,7 @@ function Account({
             {user.name} · {memberLabels[user.role ?? "score_operator"]}
           </p>
           <p className="muted">
-            Masuk melalui tautan, tanpa akun. Berlaku sampai{" "}
-            {user.expiresAt
-              ? dateTime(new Date(user.expiresAt).toISOString())
-              : "tautan dicabut"}
-            .
+            Masuk melalui tautan, tanpa akun. Berlaku sampai akses dicabut.
           </p>
           <div className="form-stack">
             <Link
@@ -4318,7 +4307,7 @@ function InviteAccept({
             </div>
             <p>
               Minta tautan baru kepada pemilik kompetisi jika akses telah
-              dicabut atau kedaluwarsa.
+              dicabut.
             </p>
             <button
               className="button secondary"
@@ -4364,7 +4353,7 @@ function Help() {
         },
         {
           title: "04 — Bekerja bersama",
-          text: "Undang admin atau operator skor melalui tautan yang berlaku 72 jam. Penerima langsung mendapat akses tanpa akun atau login, dan tautan dapat dipakai kembali sampai dicabut atau kedaluwarsa. Operator hanya bisa mengelola skor, bukan aturan dan anggota.",
+          text: "Undang admin atau operator skor melalui tautan tanpa batas waktu. Penerima langsung mendapat akses tanpa akun atau login, dan tautan dapat dipakai kembali sampai akses dicabut. Operator hanya bisa mengelola skor, bukan aturan dan anggota.",
         },
         {
           title: "Tentang demo lokal",
