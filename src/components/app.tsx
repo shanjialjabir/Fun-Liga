@@ -49,7 +49,6 @@ import {
   competitionInput,
   formats,
   standings,
-  restWarnings,
   generateFixtures,
   shuffleSeasonSchedule,
   canShuffleSchedule,
@@ -2161,14 +2160,6 @@ function CompetitionView({
                         {date(m.scheduledAt)} · {time(m.scheduledAt)}
                       </small>
                     )}
-                    {admin && restWarnings(c.matches).has(m.id) && (
-                      <small
-                        className="rest-warning"
-                        title="Tim bermain berurutan; waktu istirahat mungkin singkat."
-                      >
-                        <Clock3 size={11} /> Jeda pendek
-                      </small>
-                    )}
                   </div>
                   {admin && orderMode && (
                     <div className="fixture-actions">
@@ -2475,12 +2466,6 @@ function CompetitionView({
                 ? "Dapat dibuka melalui tautan, tidak muncul di Jelajahi."
                 : "Akan muncul di Jelajahi dan dapat dilihat tanpa akun."}
           </p>
-          {restWarnings(c.matches).size > 0 && (
-            <div className="alert">
-              Ada {restWarnings(c.matches).size} pertandingan dengan jeda
-              pendek. Ini peringatan, bukan larangan.
-            </div>
-          )}
           <button
             className="button primary full"
             disabled={busy}

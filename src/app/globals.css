@@ -2183,12 +2183,6 @@ small {
   font-size: 8px;
   color: #9e9e9e;
 }
-.fixture-status > small.rest-warning {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  color: #ffab1a;
-}
 .fixture-actions {
   display: flex;
   align-items: center;
