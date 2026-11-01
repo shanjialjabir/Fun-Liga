@@ -207,7 +207,7 @@ export function MatchGoals({
   error: string;
   send: (data: Record<string, unknown>) => Promise<boolean>;
 }) {
-  const [teamId, setTeamId] = useState(match.home || "");
+  const [creditedTeamId, setCreditedTeamId] = useState(match.home || "");
   const [scorer, setScorer] = useState("");
   const [assist, setAssist] = useState("");
   const [minute, setMinute] = useState("");
@@ -221,13 +221,14 @@ export function MatchGoals({
   const [hp, setHp] = useState(match.homePenalty?.toString() ?? "");
   const [ap, setAp] = useState(match.awayPenalty?.toString() ?? "");
   const isFinal = match.status === "final";
-  const candidates = (c.players ?? []).filter((p) => p.teamId === teamId);
-  const selectedTeam = c.teams.find((t) => t.id === teamId);
-  const beneficiary = c.teams.find(
-    (t) =>
-      t.id ===
-      (ownGoal ? (teamId === match.home ? match.away : match.home) : teamId),
-  );
+  const playerTeamId = ownGoal
+    ? creditedTeamId === match.home
+      ? match.away
+      : match.home
+    : creditedTeamId;
+  const candidates = (c.players ?? []).filter((p) => p.teamId === playerTeamId);
+  const selectedTeam = c.teams.find((t) => t.id === playerTeamId);
+  const beneficiary = c.teams.find((t) => t.id === creditedTeamId);
   const baseline = match.goalBaseline ?? {
     home: match.homeScore,
     away: match.awayScore,
@@ -259,7 +260,7 @@ export function MatchGoals({
     (!isFinal || (confirmed && reason.trim().length >= 5));
   const edit = (goal: Goal) => {
     reset();
-    setTeamId(goal.teamId);
+    setCreditedTeamId(goal.creditedTeamId);
     setScorer(goal.scorerName);
     setAssist(goal.assistName ?? "");
     setMinute(goal.minute?.toString() ?? "");
@@ -272,7 +273,7 @@ export function MatchGoals({
     const ok = await send({
       type: editing ? "goal_update" : "goal_add",
       goalId: editing?.id,
-      teamId,
+      teamId: playerTeamId,
       scorerName: scorer,
       assistName: ownGoal ? "" : assist,
       minute: minute === "" ? null : Number(minute),
@@ -301,7 +302,7 @@ export function MatchGoals({
             }
             onClick={() => {
               reset();
-              setTeamId(id!);
+              setCreditedTeamId(id!);
               setForm(true);
             }}
           >
@@ -328,12 +329,12 @@ export function MatchGoals({
             </button>
           </div>
           <label>
-            Tim pemain
+            Gol untuk tim
             <select
-              value={teamId}
+              value={creditedTeamId}
               disabled={busy}
               onChange={(e) => {
-                setTeamId(e.target.value);
+                setCreditedTeamId(e.target.value);
                 setScorer("");
                 setAssist("");
                 setExisting(false);
@@ -352,6 +353,10 @@ export function MatchGoals({
               className={!ownGoal ? "active" : ""}
               disabled={busy}
               onClick={() => {
+                if (ownGoal) {
+                  setScorer("");
+                  setAssist("");
+                }
                 setOwnGoal(false);
                 setExisting(false);
               }}
@@ -363,6 +368,7 @@ export function MatchGoals({
               className={ownGoal ? "active" : ""}
               disabled={busy}
               onClick={() => {
+                if (!ownGoal) setScorer("");
                 setOwnGoal(true);
                 setAssist("");
                 setExisting(false);
@@ -390,8 +396,9 @@ export function MatchGoals({
             disabled={busy}
           />
           <p className="goal-note">
-            Nama boleh dikosongkan dan dilengkapi nanti. Gol tetap masuk ke skor
-            dan klasemen; top skor diperbarui setelah nama diisi.
+            Nama boleh dikosongkan dan dilengkapi nanti.
+            {!ownGoal &&
+              " Gol tetap masuk ke skor dan klasemen; top skor diperbarui setelah nama diisi."}
           </p>
           {!ownGoal && (
             <PlayerNameInput
@@ -428,7 +435,7 @@ export function MatchGoals({
           )}
           <p className="goal-note">
             {editing
-              ? "Mengubah nama atau assist tidak mengubah skor. Mengubah tim atau jenis gol menyesuaikan skor."
+              ? "Mengubah nama, assist, atau jenis gol tidak mengubah skor. Skor berpindah jika tim penerima gol diubah."
               : existing
                 ? "Catatan ini melengkapi gol lama; skor tidak bertambah."
                 : `Skor ${beneficiary?.name} bertambah 1 setelah disimpan.`}

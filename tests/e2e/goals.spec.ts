@@ -69,16 +69,93 @@ test("tap match, autocomplete scorer and assist, own goal, edit/delete, final st
   await save();
   expect((await snapshot()).players).toHaveLength(2);
   expect((await snapshot()).matches[0].homeScore).toBe(2);
-  await add(awayName);
+  await add(homeName);
   await page
     .getByRole("button", { name: "Gol bunuh diri", exact: true })
     .click();
+  await expect(
+    page.getByRole("combobox", { name: "Gol untuk tim", exact: true }),
+  ).toHaveValue(m.home);
+  await expect(
+    page.getByText(`Pilih pemain ${awayName} yang melakukan gol bunuh diri.`, {
+      exact: false,
+    }),
+  ).toBeVisible();
   await page
     .getByLabel("Pemain gol bunuh diri (opsional)")
     .fill("Rian Pratama");
   await expect(page.getByLabel("Assist (opsional)")).toHaveCount(0);
   await save();
-  expect((await snapshot()).matches[0].homeScore).toBe(3);
+  const own = (await snapshot()).matches[0].goals[2];
+  expect(own).toMatchObject({
+    ownGoal: true,
+    teamId: m.away,
+    creditedTeamId: m.home,
+    scorerName: "Rian Pratama",
+  });
+  expect((await snapshot()).matches[0]).toMatchObject({
+    homeScore: 3,
+    awayScore: 0,
+  });
+  await page
+    .getByRole("button", { name: "Edit gol Rian Pratama", exact: true })
+    .click();
+  await expect(
+    page.getByRole("combobox", { name: "Gol untuk tim", exact: true }),
+  ).toHaveValue(m.home);
+  await page.getByLabel("Pemain gol bunuh diri (opsional)").fill("ri");
+  await page.getByRole("option", { name: /Rian Pratama/ }).click();
+  await page
+    .getByRole("button", { name: "Simpan perubahan gol", exact: true })
+    .click();
+  await expect(page.getByLabel("Menit (opsional)")).toHaveCount(0);
+  expect((await snapshot()).matches[0].goals[2]).toEqual(own);
+  // The selected scoring side stays fixed when changing goal type; actor names cannot cross teams.
+  await add(awayName);
+  await page
+    .getByLabel("Pencetak gol (opsional)", { exact: true })
+    .fill("Nama tim berbeda");
+  await page
+    .getByRole("button", { name: "Gol bunuh diri", exact: true })
+    .click();
+  await expect(page.getByLabel("Pemain gol bunuh diri (opsional)")).toHaveValue(
+    "",
+  );
+  await page
+    .getByLabel("Pemain gol bunuh diri (opsional)")
+    .fill("Nama tim lawan");
+  await page.getByRole("button", { name: "Gol biasa", exact: true }).click();
+  await expect(
+    page.getByLabel("Pencetak gol (opsional)", { exact: true }),
+  ).toHaveValue("");
+  await page
+    .getByRole("button", { name: "Gol bunuh diri", exact: true })
+    .click();
+  await expect(
+    page.getByRole("combobox", { name: "Gol untuk tim", exact: true }),
+  ).toHaveValue(m.away);
+  await save();
+  const bothSides = (await snapshot()).matches[0];
+  expect(bothSides).toMatchObject({ homeScore: 3, awayScore: 1 });
+  expect(bothSides.goals[3]).toMatchObject({
+    ownGoal: true,
+    teamId: m.home,
+    creditedTeamId: m.away,
+    scorerId: null,
+  });
+  await page
+    .getByRole("button", { name: "Hapus gol tanpa nama", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Konfirmasi hapus gol", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Hapus gol tanpa nama", exact: true }),
+  ).toHaveCount(0);
+  expect((await snapshot()).matches[0]).toMatchObject({
+    homeScore: 3,
+    awayScore: 0,
+  });
   await page
     .getByRole("button", { name: "Edit gol Andi Saputra", exact: true })
     .first()
